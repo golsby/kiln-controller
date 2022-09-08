@@ -16,11 +16,13 @@
  <script src="assets/js/picoreflow.js"></script>
 
  <link rel="stylesheet" href="assets/css/bootstrap.min.css"/>
+ <!--
  <link rel="stylesheet" href="assets/css/bootstrap-theme.min.css"/>
  <link rel="stylesheet" href="assets/css/bootstrap-modal.css"/>
+ -->
  <link rel="stylesheet" href="assets/css/select2.css"/>
- <link rel="stylesheet" href="assets/css/picoreflow.css"/>
-
+<link rel="stylesheet" href="assets/css/picoreflow.css"/>
+ 
 </head>
 <body>
 
@@ -29,6 +31,7 @@
    <div class="ds-title-panel">
     <div class="ds-title">Sensor Temp</div>
     <div class="ds-title">Target Temp</div>
+    <div class="ds-title" style="border: none;">Time Remaining</div>
     <div class="ds-title ds-state pull-right" style="border-left: 1px solid #ccc;">Status</div>
    </div>
    <div class="clearfix"></div>
@@ -39,8 +42,8 @@
     <div class="display pull-right ds-state" style="padding-right:0"><span class="ds-led" id="heat">&#92;</span><span class="ds-led" id="cool">&#108;</span><span class="ds-led" id="air">&#91;</span><span class="ds-led" id="hazard">&#73;</span><span class="ds-led" id="door">&#9832;</span></div>
    </div>
    <div class="clearfix"></div>
-   <div>
-    <div class="progress progress-striped active">
+   <div style="height:10px;">
+    <div class="progress active">
      <div id="progressBar" class="progress-bar"  role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" style="width: 0%">
       <span class="sr-only"></span>
      </div>
