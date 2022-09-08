@@ -1,17 +1,17 @@
 @font-face{
     font-family: "Digi";
-    src: url('/picoreflow/assets/fonts/digital-7-webfont.eot');
+    src: url('/kiln/assets/fonts/digital-7-webfont.eot');
     src: local("Digital 7"),
-    url('/picoreflow/assets/fonts/digital-7-webfont.woff') format("woff"),
-    url('/picoreflow/assets/fonts/digital-7-webfont.ttf') format("truetype");
+    url('/kiln/assets/fonts/digital-7-webfont.woff') format("woff"),
+    url('/kiln/assets/fonts/digital-7-webfont.ttf') format("truetype");
 }
 
 @font-face{
     font-family: "Tables";
-    src: url('/picoreflow/assets/fonts/tables.eot');
+    src: url('/kiln/assets/fonts/tables.eot');
     src: local("Tables"),
-    url('/picoreflow/assets/fonts/tables.woff') format("woff"),
-    url('/picoreflow/assets/fonts/tables.ttf') format("truetype");
+    url('/kiln/assets/fonts/tables.woff') format("woff"),
+    url('/kiln/assets/fonts/tables.ttf') format("truetype");
 }
 
 body {
