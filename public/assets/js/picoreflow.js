@@ -32,7 +32,7 @@ graph.profile =
     label: "Profile",
     data: [],
     points: { show: false },
-    color: "#75890c",
+    color: "#28b62c",
     draggable: false
 };
 
@@ -41,7 +41,7 @@ graph.live =
     label: "Live",
     data: [],
     points: { show: false },
-    color: "#d8d3c5",
+    color: "#e80909",
     draggable: false
 };
 
@@ -395,11 +395,11 @@ function getOptions()
         points:
         {
             show: true,
-            radius: 5,
+            radius: 0,
             symbol: "circle"
         },
 
-        shadowSize: 3
+        shadowSize: 0
 
     },
 
@@ -411,11 +411,11 @@ function getOptions()
       tickSize: get_tick_size(),
       font:
       {
-        size: 14,
-        lineHeight: 14,        weight: "normal",
-        family: "Digi",
+        size: 12,
+        lineHeight: 12,        weight: "normal",
+        family: "courier",
         variant: "small-caps",
-        color: "rgba(216, 211, 197, 0.85)"
+        color: "rgba(0,0,0, 0.6)"
       }
 	},
 
@@ -427,12 +427,12 @@ function getOptions()
       tickColor: 'rgba(216, 211, 197, 0.2)',
       font:
       {
-        size: 14,
-        lineHeight: 14,
+        size: 12,
+        lineHeight: 12,
         weight: "normal",
-        family: "Digi",
+        family: "courier",
         variant: "small-caps",
-        color: "rgba(216, 211, 197, 0.85)"
+        color: "rgba(0,0,0, 0.6)"
       }
 	},
 
@@ -560,7 +560,7 @@ $(document).ready(function()
                     eta = new Date(left * 1000).toISOString().substr(11, 8);
 
                     updateProgress(parseFloat(x.runtime)/parseFloat(x.totaltime)*100);
-                    $('#state').html('<span class="glyphicon glyphicon-time" style="font-size: 22px; font-weight: normal"></span><span style="font-family: Digi; font-size: 40px;">' + eta + '</span>');
+                    $('#state').html('<span class="glyphicon glyphicon-time" style="font-size: 22px; font-weight: normal"></span>&nbsp;<span>' + eta + '</span>');
                     $('#target_temp').html(parseInt(x.target));
                     $('#cost').html(x.currency_type + parseFloat(x.cost).toFixed(2));
                   
