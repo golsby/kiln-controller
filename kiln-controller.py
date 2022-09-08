@@ -47,7 +47,7 @@ oven.set_ovenwatcher(ovenWatcher)
 
 @app.route('/')
 def index():
-    return bottle.redirect('/picoreflow/index.html')
+    return bottle.redirect('/kiln/index.html')
 
 @app.get('/api/stats')
 def handle_api():
@@ -117,7 +117,7 @@ def find_profile(wanted):
             return profile
     return None
 
-@app.route('/picoreflow/:filename#.*#')
+@app.route('/kiln/:filename#.*#')
 def send_static(filename):
     log.debug("serving %s" % filename)
     return bottle.static_file(filename, root=os.path.join(os.path.dirname(os.path.realpath(sys.argv[0])), "public"))
