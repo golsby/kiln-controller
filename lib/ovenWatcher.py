@@ -1,5 +1,6 @@
 import threading,logging,json,time,datetime
 from oven import Oven
+from arduinoWatcher import ArduinoWatcher, KilnWatcherError, OverTempAlarmError
 log = logging.getLogger(__name__)
 
 class OvenWatcher(threading.Thread):
@@ -12,6 +13,7 @@ class OvenWatcher(threading.Thread):
         threading.Thread.__init__(self)
         self.daemon = True
         self.oven = oven
+        self.arduinoWatcher = ArduinoWatcher(0x8, 1)
         self.start()
 
 # FIXME - need to save runs of schedules in near-real-time
@@ -31,6 +33,19 @@ class OvenWatcher(threading.Thread):
                 self.last_log.append(oven_state)
             else:
                 self.recording = False
+                
+            try:
+                watcher_temp = self.arduinoWatcher.getCurrentTemp()
+                log.debug("Watcher temp: {0}".format(watcher_temp))
+            except KilnWatcherError:
+                log.error("Kiln Watcher Error")
+                self.oven.abort_run_with_error("ERROR: Kiln watcher error")
+            except OverTempAlarmError:
+                log.error("Kiln Watcher OVER TEMP ALARM")
+                self.oven.abort_run_with_error("ERROR: Safe Temp Exceeded")
+            except:
+                pass
+
             self.notify_all(oven_state)
             time.sleep(self.oven.time_step)
    

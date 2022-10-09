@@ -30,8 +30,9 @@ currency_type   = "$"   # Currency Symbol to show when calculating cost to run j
 #   can use whichever GPIO you prefer/have available.
 
 ### Outputs
-gpio_heat = 23  # Switches zero-cross solid-state-relay
-gpio_contactor = 24
+gpio_heat = 11  # Switches zero-cross solid-state-relay
+gpio_contactor = 9
+gpio_arduino_reset = 10
 
 ### Thermocouple Adapter selection:
 #   max31855 - bitbang SPI interface
