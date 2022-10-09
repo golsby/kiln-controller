@@ -41,7 +41,10 @@ class Output(object):
             GPIO.setwarnings(False)
             GPIO.setup(config.gpio_heat, GPIO.OUT)
             if hasattr(config, 'gpio_contactor'):
-                GPIO.setup(config.gpio_contactor, GPIO.OUT)                
+                GPIO.setup(config.gpio_contactor, GPIO.OUT)
+            if hasattr(config, 'gpio_arduino_reset'):
+                GPIO.setup(config.gpio_arduino_reset, GPIO.OUT)
+                GPIO.output(config.gpio_arduino_reset, GPIO.HIGH)
             self.active = True
             self.GPIO = GPIO
         except:
@@ -63,6 +66,13 @@ class Output(object):
             self.GPIO.output(config.gpio_contactor, self.GPIO.HIGH)
         else:
             self.GPIO.output(config.gpio_contactor, self.GPIO.LOW)
+            
+    def resetArduino(self):
+        self.GPIO.output(config.gpio_arduino_reset, self.GPIO.LOW)
+        time.sleep(.25)
+        self.GPIO.output(config.gpio_arduino_reset, self.GPIO.HIGH)
+        time.sleep(1)
+        
 
 
 # FIX - Board class needs to be completely removed
@@ -251,6 +261,10 @@ class Oven(threading.Thread):
     def abort_run(self):
         self.reset()
         self.save_automatic_restart_state()
+        
+    def abort_run_with_error(self, err):
+        self.abort_run()
+        self.state = err
 
     def kiln_must_catch_up(self):
         '''shift the whole schedule forward in time by one time_step
@@ -284,22 +298,22 @@ class Oven(threading.Thread):
             config.emergency_shutoff_temp):
             log.info("emergency!!! temperature too high")
             if config.ignore_temp_too_high == False:
-                self.abort_run()
+                self.abort_run_with_error("ERROR: Temp too high")
 
         if self.board.temp_sensor.noConnection:
             log.info("emergency!!! lost connection to thermocouple")
             if config.ignore_lost_connection_tc == False:
-                self.abort_run()
+                self.abort_run_with_error("ERROR: Lost connection to thermocouple")
 
         if self.board.temp_sensor.unknownError:
             log.info("emergency!!! unknown thermocouple error")
             if config.ignore_unknown_tc_error == False:
-                self.abort_run()
+                self.abort_run_with_error("ERROR: Uknown thermocouple error")
 
         if self.board.temp_sensor.bad_percent > 30:
             log.info("emergency!!! too many errors in a short period")
             if config.ignore_too_many_tc_errors == False:
-                self.abort_run()
+                self.abort_run_with_error("ERROR: Too many thermocouple errors")
 
     def reset_if_schedule_ended(self):
         if self.runtime > self.totaltime:
@@ -577,6 +591,9 @@ class Profile():
                 break
 
         return (prev_point, next_point)
+    
+    def get_max_temp(self):
+        return max([x for (t, x) in self.data])
 
     def get_target_temperature(self, time):
         if time > self.get_duration():

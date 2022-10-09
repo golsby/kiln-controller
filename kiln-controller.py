@@ -6,8 +6,7 @@ import logging
 import json
 
 import bottle
-import gevent
-import geventwebsocket
+import time
 #from bottle import post, get
 from gevent.pywsgi import WSGIServer
 from geventwebsocket.handler import WebSocketHandler
@@ -147,6 +146,16 @@ def handle_control():
                     if profile_obj:
                         profile_json = json.dumps(profile_obj)
                         profile = Profile(profile_json)
+                        
+                    # Get max temp from board, and add 20 degrees C
+                    max_temp = profile.get_max_temp()
+                    if (config.temp_scale == "f"):
+                        max_temp = (max_temp - 32.0) * 5.0 / 9.0   
+                    max_temp += 20
+                    ovenWatcher.oven.output.resetArduino()
+                    time.sleep(1)
+                    ovenWatcher.arduinoWatcher.setMaxTemp(max_temp)
+                    
                     oven.run_profile(profile)
                     ovenWatcher.record(profile)
                 elif msgdict.get("cmd") == "SIMULATE":
@@ -163,6 +172,10 @@ def handle_control():
                 elif msgdict.get("cmd") == "STOP":
                     log.info("Stop command received")
                     oven.abort_run()
+                elif msgdict.get("cmd") == "RESET_WATCHER":
+                    log.info("RESET_WATCHER command received")
+                    ovenWatcher.arduinoWatcher.reset()
+                    #watcher.reset()
         except WebSocketError as e:
             log.error(e)
             break
