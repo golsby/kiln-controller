@@ -30,7 +30,9 @@ currency_type   = "$"   # Currency Symbol to show when calculating cost to run j
 #   can use whichever GPIO you prefer/have available.
 
 ### Outputs
-gpio_heat = 23  # Switches zero-cross solid-state-relay
+gpio_heat = 11  # Switches zero-cross solid-state-relay
+gpio_contactor = 9
+gpio_arduino_reset = 10
 
 ### Thermocouple Adapter selection:
 #   max31855 - bitbang SPI interface
@@ -81,7 +83,7 @@ stop_integral_windup = True
 ########################################################################
 #
 #   Simulation parameters
-simulate = True
+simulate = False
 sim_t_env      = 60.0   # deg C
 sim_c_heat     = 500.0  # J/K  heat capacity of heat element
 sim_c_oven     = 5000.0 # J/K  heat capacity of oven

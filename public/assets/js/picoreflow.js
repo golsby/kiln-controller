@@ -519,18 +519,34 @@ $(document).ready(function()
                 {
                     if(state_last == "RUNNING")
                     {
-                        $('#target_temp').html('---');
-                        updateProgress(0);
-                        $.bootstrapGrowl("<span class=\"glyphicon glyphicon-exclamation-sign\"></span> <b>Run completed</b>", {
-                        ele: 'body', // which element to append to
-                        type: 'success', // (null, 'info', 'error', 'success')
-                        offset: {from: 'top', amount: 250}, // 'top', or 'bottom'
-                        align: 'center', // ('left', 'right', or 'center')
-                        width: 385, // (integer, or 'auto')
-                        delay: 0,
-                        allow_dismiss: true,
-                        stackup_spacing: 10 // spacing between consecutively stacked growls.
-                        });
+                        if (state.includes("ERROR")) {
+                            $('#target_temp').html('---');
+                            updateProgress(0);
+                            $.bootstrapGrowl("<span class=\"glyphicon glyphicon-exclamation-sign\"></span> <b>" + state + "</b>", {
+                            ele: 'body', // which element to append to
+                            type: 'error', // (null, 'info', 'error', 'success')
+                            offset: {from: 'top', amount: 250}, // 'top', or 'bottom'
+                            align: 'center', // ('left', 'right', or 'center')
+                            width: 385, // (integer, or 'auto')
+                            delay: 0,
+                            allow_dismiss: true,
+                            stackup_spacing: 10 // spacing between consecutively stacked growls.
+                            });
+                        }
+                        else {
+                            $('#target_temp').html('---');
+                            updateProgress(0);
+                            $.bootstrapGrowl("<span class=\"glyphicon glyphicon-exclamation-sign\"></span> <b>Run completed</b>", {
+                            ele: 'body', // which element to append to
+                            type: 'success', // (null, 'info', 'error', 'success')
+                            offset: {from: 'top', amount: 250}, // 'top', or 'bottom'
+                            align: 'center', // ('left', 'right', or 'center')
+                            width: 385, // (integer, or 'auto')
+                            delay: 0,
+                            allow_dismiss: true,
+                            stackup_spacing: 10 // spacing between consecutively stacked growls.
+                            });
+                        }
                     }
                 }
 
