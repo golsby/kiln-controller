@@ -15,6 +15,7 @@ log_format = '%(asctime)s %(levelname)s %(name)s: %(message)s'
 ### Server
 listening_ip = "0.0.0.0"
 listening_port = 8081
+# listening_port=80
 
 ### Cost Estimate
 kwh_rate        = 0.1319  # Rate in currency_type to calculate cost to run job
@@ -67,9 +68,9 @@ sensor_time_wait = 2
 # well with the simulated oven. You must tune them to work well with 
 # your specific kiln. Note that the integral pid_ki is
 # inverted so that a smaller number means more integral action.
-pid_kp = 15   # Proportional 25,200,200
-pid_ki = 5   # Integral
-pid_kd = 400  # Derivative
+pid_kp = 10   # Proportional 25,200,200
+pid_ki = 50   # Integral
+pid_kd = 100  # Derivative
 
 
 ########################################################################
