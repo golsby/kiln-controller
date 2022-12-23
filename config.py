@@ -13,7 +13,7 @@ log_level = logging.INFO
 log_format = '%(asctime)s %(levelname)s %(name)s: %(message)s'
 
 ### Server
-listening_port = 8081
+listening_port = 80
 
 ########################################################################
 # Cost Information
@@ -73,9 +73,9 @@ sensor_time_wait = 2
 # well with the simulated oven. You must tune them to work well with 
 # your specific kiln. Note that the integral pid_ki is
 # inverted so that a smaller number means more integral action.
-pid_kp = 25   # Proportional 25,200,200
-pid_ki = 10   # Integral
-pid_kd = 200  # Derivative
+pid_kp = 20   # Proportional 25,200,200
+pid_ki = 50   # Integral
+pid_kd = 100    # Derivative
 
 
 ########################################################################
@@ -131,6 +131,7 @@ kiln_must_catch_up = True
 # outside the window. The bigger you make the window, the more
 # integral you will accumulate. This should be a positive integer.
 pid_control_window = 5 #degrees 
+kiln_catchup_window = 30 #degrees
 
 # thermocouple offset
 # If you put your thermocouple in ice water and it reads 36F, you can
@@ -142,7 +143,7 @@ thermocouple_offset=0
 # If you suffer from the high temperature kiln issue and have set 
 # honour_theromocouple_short_errors to False,
 # you will likely need to increase this (eg I use 40)
-temperature_average_samples = 40 
+temperature_average_samples = 100
 
 # Thermocouple AC frequency filtering - set to True if in a 50Hz locale, else leave at False for 60Hz locale
 ac_freq_50hz = False
