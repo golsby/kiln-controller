@@ -3,6 +3,7 @@
 import os
 import sys
 import logging
+from logging.handlers import RotatingFileHandler
 import json
 
 import bottle
@@ -20,8 +21,24 @@ except:
     print ("Could not import config file.")
     print ("Copy config.py.EXAMPLE to config.py and adapt it for your setup.")
     exit(1)
+    
+logfile = os.path.join(os.path.dirname(__file__), 'process.log')
 
-logging.basicConfig(level=config.log_level, format=config.log_format)
+# my_handler = RotatingFileHandler(
+#     logfile, 
+#     mode='a', 
+#     maxBytes=20*1024*1024,
+#     backupCount=2, 
+#     encoding=None, 
+#     delay=False
+# )
+logging.basicConfig(
+    filename=logfile,
+    filemode='a',
+    level=config.log_level, 
+    format=config.log_format,
+    #handlers = [my_handler]
+)
 log = logging.getLogger("kiln-controller")
 log.info("Starting kiln controller")
 
@@ -80,8 +97,7 @@ def handle_api():
         # FIXME juggling of json should happen in the Profile class
         profile_json = json.dumps(profile)
         profile = Profile(profile_json)
-        oven.run_profile(profile,startat=startat)
-        ovenWatcher.record(profile)
+        run_and_watch(profile, startat=startat)
 
     if bottle.request.json['cmd'] == 'stop':
         log.info("api stop command received")
@@ -147,17 +163,8 @@ def handle_control():
                         profile_json = json.dumps(profile_obj)
                         profile = Profile(profile_json)
                         
-                    # Get max temp from board, and add 20 degrees C
-                    max_temp = profile.get_max_temp()
-                    if (config.temp_scale == "f"):
-                        max_temp = (max_temp - 32.0) * 5.0 / 9.0   
-                    max_temp += 20
-                    ovenWatcher.oven.output.resetArduino()
-                    time.sleep(1)
-                    ovenWatcher.arduinoWatcher.setMaxTemp(max_temp)
-                    
-                    oven.run_profile(profile)
-                    ovenWatcher.record(profile)
+                    run_and_watch(profile)
+
                 elif msgdict.get("cmd") == "SIMULATE":
                     log.info("SIMULATE command received")
                     #profile_obj = msgdict.get('profile')
@@ -254,6 +261,22 @@ def handle_status():
             break
     log.info("websocket (status) closed")
 
+
+def run_and_watch(profile, startat=0):
+    # Set max kiln temp; kiln shuts down automatically if safety
+    # thermocouple reaches this temperature
+    max_temp = profile.get_max_temp()
+    if (config.temp_scale == "f"):
+        max_temp = (max_temp - 32.0) * 5.0 / 9.0   
+    max_temp += 20
+    ovenWatcher.oven.output.resetArduino()
+    time.sleep(1)
+    log.info("Kiln Watcher MAX set to {0}C".format(max_temp))
+    ovenWatcher.arduinoWatcher.setMaxTemp(max_temp)
+    
+    oven.run_profile(profile,startat=startat)
+    ovenWatcher.record(profile)
+    
 
 def get_profiles():
     try:
