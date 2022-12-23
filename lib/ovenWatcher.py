@@ -47,9 +47,9 @@ class OvenWatcher(threading.Thread):
                 pass
 
             self.notify_all(oven_state)
-            time.sleep(0.1) #self.oven.time_step)
+            time.sleep(self.oven.time_step)
    
-    def lastlog_subset(self,maxpts=50):
+    def lastlog_subset(self,maxpts=3000):
         '''send about maxpts from lastlog by skipping unwanted data'''
         totalpts = len(self.last_log)
         if (totalpts <= maxpts):

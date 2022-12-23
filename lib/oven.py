@@ -75,24 +75,6 @@ class Output(object):
         
 
 
-class Clock(object):
-    def now(self):
-        return datetime.datetime.now()
-
-    def tick(self):
-        return
-
-class SimulatedClock(Clock):
-    def __init__(self):
-        self.time = datetime.datetime.now()
-
-    def now(self):
-        return self.time
-
-    def tick(self, time_step):
-        self.time += datetime.timedelta(seconds=time_step)
-
-
 # FIX - Board class needs to be completely removed
 class Board(object):
     def __init__(self):
@@ -211,7 +193,7 @@ class TempSensorReal(TempSensor):
                 self.ok_count += 1
 
             else:
-                log.error("Problem reading temp N/C:%s GND:%s VCC:%s ???:%s" % (self.noConnection,self.shortToGround,self.shortToVCC,self.unknownError))
+                # log.error("Problem reading temp N/C:%s GND:%s VCC:%s ???:%s" % (self.noConnection,self.shortToGround,self.shortToVCC,self.unknownError))
                 self.bad_count += 1
 
             if len(temps):
@@ -224,12 +206,14 @@ class TempSensorReal(TempSensor):
         then return the average of what is left
         '''
         chop = chop / 100
-        temps = sorted(temps)
+        temps = sorted(filter(lambda x: x>-1, temps))
         total = len(temps)
         items = int(total*chop)
         temps = temps[items:total-items]
-        return sum(temps) / len(temps)
-
+        avg_tmp = sum(temps) / len(temps)
+        # logging.info("{0} avg temp from {1} values".format(avg_tmp, len(temps)))
+        return avg_tmp
+    
 class Oven(threading.Thread):
     '''parent oven class. this has all the common code
        for either a real or simulated oven'''
@@ -239,7 +223,6 @@ class Oven(threading.Thread):
         self.temperature = 0
         self.time_step = config.sensor_time_wait
         self.reset()
-        self.clock = Clock()
 
     def reset(self):
         self.state = "IDLE"
@@ -269,7 +252,7 @@ class Oven(threading.Thread):
 
         self.startat = startat * 60
         self.runtime = self.startat
-        self.start_time = self.clock.now() - datetime.timedelta(seconds=self.startat)
+        self.start_time = datetime.datetime.now() - datetime.timedelta(seconds=self.startat)
         self.profile = profile
         self.totaltime = profile.get_duration()
         self.state = "RUNNING"
@@ -291,17 +274,17 @@ class Oven(threading.Thread):
             temp = self.board.temp_sensor.temperature + \
                 config.thermocouple_offset
             # kiln too cold, wait for it to heat up
-            if self.target - temp > config.pid_control_window:
+            if self.target - temp > config.kiln_catchup_window:
                 log.info("kiln must catch up, too cold, shifting schedule")
-                self.start_time = self.clock.now() - datetime.timedelta(milliseconds = self.runtime * 1000)
+                self.start_time = datetime.datetime.now() - datetime.timedelta(milliseconds = self.runtime * 1000)
             # kiln too hot, wait for it to cool down
-            if temp - self.target > config.pid_control_window:
+            if temp - self.target > config.kiln_catchup_window:
                 log.info("kiln must catch up, too hot, shifting schedule")
-                self.start_time = self.clock.now() - datetime.timedelta(milliseconds = self.runtime * 1000)
+                self.start_time = datetime.datetime.now() - datetime.timedelta(milliseconds = self.runtime * 1000)
 
     def update_runtime(self):
 
-        runtime_delta = self.clock.now() - self.start_time
+        runtime_delta = datetime.datetime.now() - self.start_time
         if runtime_delta.total_seconds() < 0:
             runtime_delta = datetime.timedelta(0)
 
@@ -432,7 +415,6 @@ class Oven(threading.Thread):
                 self.heat_then_cool()
                 self.reset_if_emergency()
                 self.reset_if_schedule_ended()
-                self.clock.tick(self.time_step)
 
 class SimulatedOven(Oven):
 
@@ -451,7 +433,6 @@ class SimulatedOven(Oven):
         self.t_h = self.t_env #deg C temp of heating element
 
         super().__init__()
-        self.clock = SimulatedClock()
 
         # start thread
         self.start()
@@ -482,8 +463,7 @@ class SimulatedOven(Oven):
     def heat_then_cool(self):
         pid = self.pid.compute(self.target,
                                self.board.temp_sensor.temperature +
-                               config.thermocouple_offset,
-                               self.clock)
+                               config.thermocouple_offset)
         heat_on = float(self.time_step * pid)
         heat_off = float(self.time_step * (1 - pid))
 
@@ -522,9 +502,7 @@ class SimulatedOven(Oven):
 
         # we don't actually spend time heating & cooling during
         # a simulation, so sleep.
-        # Remove simulation because we've replaced the clock with a fake clock
-        # time.sleep(self.time_step)
-        time.sleep(0.02)
+        time.sleep(self.time_step)
 
 
 class RealOven(Oven):
@@ -549,8 +527,7 @@ class RealOven(Oven):
         self.output.contactor(1)
         pid = self.pid.compute(self.target,
                                self.board.temp_sensor.temperature +
-                               config.thermocouple_offset,
-                               self.clock)
+                               config.thermocouple_offset)
         heat_on = float(self.time_step * pid)
         heat_off = float(self.time_step * (1 - pid))
 
@@ -635,8 +612,8 @@ class PID():
     # settled on -50 to 50 and then divide by 50 at the end. This results
     # in a larger PID control window and much more accurate control...
     # instead of what used to be binary on/off control.
-    def compute(self, setpoint, ispoint, clock):
-        now = clock.now()
+    def compute(self, setpoint, ispoint):
+        now = datetime.datetime.now()
         timeDelta = (now - self.lastNow).total_seconds()
 
         window_size = 100

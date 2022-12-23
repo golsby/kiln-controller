@@ -86,8 +86,8 @@ body {
     color: #2d2d2d;
     font-family: "courier";
     font-size: 24px;
-    text-shadow: 0 0 12px rgba(0, 0, 0, 1);
-    background-color: #3F3E3A !important;
+    /*text-shadow: 0 0 12px rgba(0, 0, 0, 1);
+    background-color: #3F3E3A !important;*/
     text-align: right;
     padding: 0;
     padding-right: 7px;
@@ -266,7 +266,7 @@ body {
 
 .graph {
     width: 100%;
-    height: 300px;
+    height: 600px;
     font-size: 14px;
     line-height: 1.2em;
 }
