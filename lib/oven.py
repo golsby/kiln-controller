@@ -211,7 +211,7 @@ class TempSensorReal(TempSensor):
                 self.ok_count += 1
 
             else:
-                log.error("Problem reading temp N/C:%s GND:%s VCC:%s ???:%s" % (self.noConnection,self.shortToGround,self.shortToVCC,self.unknownError))
+                # log.error("Problem reading temp N/C:%s GND:%s VCC:%s ???:%s" % (self.noConnection,self.shortToGround,self.shortToVCC,self.unknownError))
                 self.bad_count += 1
 
             if len(temps):
@@ -224,12 +224,14 @@ class TempSensorReal(TempSensor):
         then return the average of what is left
         '''
         chop = chop / 100
-        temps = sorted(temps)
+        temps = sorted(filter(lambda x: x>-1, temps))
         total = len(temps)
         items = int(total*chop)
         temps = temps[items:total-items]
-        return sum(temps) / len(temps)
-
+        avg_tmp = sum(temps) / len(temps)
+        # logging.info("{0} avg temp from {1} values".format(avg_tmp, len(temps)))
+        return avg_tmp
+    
 class Oven(threading.Thread):
     '''parent oven class. this has all the common code
        for either a real or simulated oven'''
@@ -291,11 +293,11 @@ class Oven(threading.Thread):
             temp = self.board.temp_sensor.temperature + \
                 config.thermocouple_offset
             # kiln too cold, wait for it to heat up
-            if self.target - temp > config.pid_control_window:
+            if self.target - temp > config.kiln_catchup_window:
                 log.info("kiln must catch up, too cold, shifting schedule")
                 self.start_time = self.clock.now() - datetime.timedelta(milliseconds = self.runtime * 1000)
             # kiln too hot, wait for it to cool down
-            if temp - self.target > config.pid_control_window:
+            if temp - self.target > config.kiln_catchup_window:
                 log.info("kiln must catch up, too hot, shifting schedule")
                 self.start_time = self.clock.now() - datetime.timedelta(milliseconds = self.runtime * 1000)
 
