@@ -182,17 +182,9 @@ class TempSensorReal(TempSensor):
 
     def run(self):
         '''use a moving average of config.temperature_average_samples across the time_step'''
-        temps = []
+        temps = [-1] * config.temperature_average_samples
+        temp_index = 0
         while True:
-            # reset error counter if time is up
-            if (time.time() - self.bad_stamp) > (self.time_step * 2):
-                if self.bad_count + self.ok_count:
-                    self.bad_percent = (self.bad_count / (self.bad_count + self.ok_count)) * 100
-                else:
-                    self.bad_percent = 0
-                self.bad_count = 0
-                self.ok_count = 0
-                self.bad_stamp = time.time()
 
             temp = self.thermocouple.get()
             self.noConnection = self.thermocouple.noConnection
@@ -205,17 +197,16 @@ class TempSensorReal(TempSensor):
                 is_bad_value |= self.shortToGround | self.shortToVCC
 
             if not is_bad_value:
-                temps.append(temp)
-                if len(temps) > config.temperature_average_samples:
-                    del temps[0]
-                self.ok_count += 1
+                temps[temp_index] = temp
 
             else:
                 log.error("Problem reading temp N/C:%s GND:%s VCC:%s ???:%s" % (self.noConnection,self.shortToGround,self.shortToVCC,self.unknownError))
-                self.bad_count += 1
+                temps[temp_index] = -1
 
             if len(temps):
                 self.temperature = self.get_avg_temp(temps)
+                
+            temp_index = (temp_index + 1) % config.temperature_average_samples 
             time.sleep(self.sleeptime)
 
     def get_avg_temp(self, temps, chop=25):
