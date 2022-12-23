@@ -44,7 +44,7 @@ log.info("Starting kiln controller")
 
 script_dir = os.path.dirname(os.path.realpath(__file__))
 sys.path.insert(0, script_dir + '/lib/')
-profile_path = os.path.join(script_dir, "storage", "profiles")
+profile_path = config.kiln_profiles_directory
 
 from oven import SimulatedOven, RealOven, Profile
 from ovenWatcher import OvenWatcher
@@ -321,7 +321,7 @@ def get_config():
 
 
 def main():
-    ip = config.listening_ip
+    ip = "0.0.0.0"
     port = config.listening_port
     log.info("listening on %s:%d" % (ip, port))
 

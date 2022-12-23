@@ -17,9 +17,16 @@ listening_ip = "0.0.0.0"
 listening_port = 80
 # listening_port=80
 
-### Cost Estimate
-kwh_rate        = 0.118  # Rate in currency_type to calculate cost to run job
-currency_type   = "$"    # Currency Symbol to show when calculating cost to run job
+########################################################################
+# Cost Information
+#
+# This is used to calculate a cost estimate before a run. It's also used
+# to produce the actual cost during a run. My kiln has three
+# elements that when my switches are set to high, consume 9460 watts.
+
+kwh_rate        = 0.1319  # cost per kilowatt hour per currency_type to calculate cost to run job
+kw_elements     = 9.460 # if the kiln elements are on, the wattage in kilowatts
+currency_type   = "$"   # Currency Symbol to show when calculating cost to run job
 
 ########################################################################
 #
@@ -124,7 +131,7 @@ kiln_must_catch_up = True
 # the elements are either 100% on because the kiln is too cold
 # or 100% off because the kiln is too hot. No integral builds up
 # outside the window. The bigger you make the window, the more
-# integral you will accumulate.
+# integral you will accumulate. This should be a positive integer.
 pid_control_window = 5 #degrees 
 kiln_catchup_window = 30 #degrees
 
@@ -176,4 +183,12 @@ ignore_tc_short_errors = False
 automatic_restarts = False
 automatic_restart_window = 15 # max minutes since power outage
 automatic_restart_state_file = os.path.abspath(os.path.join(os.path.dirname( __file__ ),'state.json'))
+
+########################################################################
+# load kiln profiles from this directory
+# created a repo where anyone can contribute profiles. The objective is
+# to load profiles from this repository by default.
+# See https://github.com/jbruce12000/kiln-profiles
+kiln_profiles_directory = os.path.abspath(os.path.join(os.path.dirname( __file__ ),"storage", "profiles")) 
+#kiln_profiles_directory = os.path.abspath(os.path.join(os.path.dirname( __file__ ),'..','kiln-profiles','pottery')) 
 
