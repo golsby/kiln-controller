@@ -165,40 +165,50 @@ class TempSensorReal(TempSensor):
     def run(self):
         '''use a moving average of config.temperature_average_samples across the time_step'''
         temps = []
-        while True:
-            # reset error counter if time is up
-            if (time.time() - self.bad_stamp) > (self.time_step * 2):
-                if self.bad_count + self.ok_count:
-                    self.bad_percent = (self.bad_count / (self.bad_count + self.ok_count)) * 100
+        # log.info("Running thermocouple sensor.")
+        try:
+            while True:
+                # reset error counter if time is up
+                if (time.time() - self.bad_stamp) > (self.time_step * 2):
+                    if self.bad_count + self.ok_count:
+                        self.bad_percent = (self.bad_count / (self.bad_count + self.ok_count)) * 100
+                    else:
+                        self.bad_percent = 0
+                    self.bad_count = 0
+                    self.ok_count = 0
+                    self.bad_stamp = time.time()
+
+                # log.info("Reading thermocouple")
+                temp = self.thermocouple.get()
+                #log.info(">>> T: {0}".format(temp))
+                self.noConnection = self.thermocouple.noConnection
+                self.shortToGround = self.thermocouple.shortToGround
+                self.shortToVCC = self.thermocouple.shortToVCC
+                self.unknownError = self.thermocouple.unknownError
+
+                is_bad_value = self.noConnection | self.unknownError
+                if not config.ignore_tc_short_errors:
+                    is_bad_value |= self.shortToGround | self.shortToVCC
+
+                if not is_bad_value:
+                    # log.info(temp)
+                    temps.append(temp)
+                    if len(temps) > config.temperature_average_samples:
+                        del temps[0]
+                    self.ok_count += 1
+
                 else:
-                    self.bad_percent = 0
-                self.bad_count = 0
-                self.ok_count = 0
-                self.bad_stamp = time.time()
+                    # log.error("Problem reading temp N/C:%s GND:%s VCC:%s ???:%s" % (self.noConnection,self.shortToGround,self.shortToVCC,self.unknownError))
+                    self.bad_count += 1
 
-            temp = self.thermocouple.get()
-            self.noConnection = self.thermocouple.noConnection
-            self.shortToGround = self.thermocouple.shortToGround
-            self.shortToVCC = self.thermocouple.shortToVCC
-            self.unknownError = self.thermocouple.unknownError
+                if len(temps):
+                    self.temperature = self.get_avg_temp(temps)
 
-            is_bad_value = self.noConnection | self.unknownError
-            if not config.ignore_tc_short_errors:
-                is_bad_value |= self.shortToGround | self.shortToVCC
-
-            if not is_bad_value:
-                temps.append(temp)
-                if len(temps) > config.temperature_average_samples:
-                    del temps[0]
-                self.ok_count += 1
-
-            else:
-                # log.error("Problem reading temp N/C:%s GND:%s VCC:%s ???:%s" % (self.noConnection,self.shortToGround,self.shortToVCC,self.unknownError))
-                self.bad_count += 1
-
-            if len(temps):
-                self.temperature = self.get_avg_temp(temps)
-            time.sleep(self.sleeptime)
+                #log.info("Sleeping {0}".format(self.sleeptime))
+                time.sleep(self.sleeptime)
+        except Exception as ex:
+            import traceback
+            log.error(traceback.format_exc())
 
     def get_avg_temp(self, temps, chop=25):
         '''
@@ -206,12 +216,14 @@ class TempSensorReal(TempSensor):
         then return the average of what is left
         '''
         chop = chop / 100
-        temps = sorted(filter(lambda x: x>-1, temps))
-        total = len(temps)
-        items = int(total*chop)
-        temps = temps[items:total-items]
-        avg_tmp = sum(temps) / len(temps)
-        # logging.info("{0} avg temp from {1} values".format(avg_tmp, len(temps)))
+        temps = sorted(filter(lambda x: x!=-1, temps))
+        avg_tmp = 0
+        if temps:
+            total = len(temps)
+            items = int(total*chop)
+            temps = temps[items:total-items]
+            avg_tmp = sum(temps) / len(temps)
+            # logging.info("{0} avg temp from {1} values".format(avg_tmp, len(temps)))
         return avg_tmp
     
 class Oven(threading.Thread):
