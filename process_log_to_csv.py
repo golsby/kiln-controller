@@ -17,26 +17,43 @@ if len(sys.argv) == 3:
         print("Invalid date/time format. Use 'YYYY-MM-DD HH:MM:SS'")
         sys.exit(1)
 
-# Read log data from file
+# Initialize variables
+last_written_time = None
+output_file = 'graph.csv'
+
+# Open the output CSV file
+csvfile = open(output_file, 'w', newline='')
+csv_writer = csv.writer(csvfile)
+csv_writer.writerow(['datetime', 'temp'])
+
+# Read log data from file line by line
 with open(logfile, 'r') as file:
-    log_data = file.read()
-
-# Extract lines with temp=
-temp_lines = re.findall(r'(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}),\d{3} INFO oven: temp=(\d+\.\d+)', log_data)
-
-# Write to CSV file
-with open('today.csv', 'w', newline='') as csvfile:
-    csv_writer = csv.writer(csvfile)
-    csv_writer.writerow(['datetime', 'temp'])
-
-    last_written_time = None
-    for line in temp_lines:
-        date_time_str, temp = line
-        date_time = datetime.strptime(date_time_str, '%Y-%m-%d %H:%M:%S')
-
-        if start_datetime and date_time < start_datetime:
+    for line in file:
+        if "oven: Start" in line:
+            # Close and reopen the output CSV file
+            date_time_str = re.search(r'(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})', line).group(1)
+            date_time = datetime.strptime(date_time_str, '%Y-%m-%d %H:%M:%S')
+            output_file = f'graph-{date_time.strftime("%Y%m%d_%H%M%S")}.csv'
+            csvfile.close()
+            csvfile = open(output_file, 'w', newline='')
+            csv_writer = csv.writer(csvfile)
+            csv_writer.writerow(['datetime', 'temp'])
+            last_written_time = None
             continue
 
-        if last_written_time is None or date_time >= last_written_time + timedelta(seconds=60):
-            csv_writer.writerow([date_time.strftime('%Y-%m-%d %H:%M:%S'), temp])
-            last_written_time = date_time
+        # Extract lines with temp=
+        match = re.search(r'(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}),\d{3} INFO oven: temp=(\d+\.\d+)', line)
+        if match:
+            date_time_str, temp = match.groups()
+            date_time = datetime.strptime(date_time_str, '%Y-%m-%d %H:%M:%S')
+
+            if start_datetime and date_time < start_datetime:
+                continue
+
+            if last_written_time is None or date_time >= last_written_time + timedelta(seconds=60):
+                csv_writer.writerow([date_time.strftime('%Y-%m-%d %H:%M:%S'), temp])
+                last_written_time = date_time
+
+# Close the output CSV file
+csvfile.close()
+
