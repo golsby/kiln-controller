@@ -508,9 +508,10 @@ class SimulatedOven(Oven):
         time_left = self.totaltime - self.runtime
 
         try:
-            log.info("temp=%.2f, target=%.2f, error=%.2f, pid=%.2f, p=%.2f, i=%.2f, d=%.2f, heat_on=%.2f, heat_off=%.2f, run_time=%d, total_time=%d, time_left=%d" %
+            log.info("temp=%.2f, %.2f, watcherTemp=%.2f, error=%.2f, pid=%.2f, p=%.2f, i=%.2f, d=%.2f, heat_on=%.2f, heat_off=%.2f, run_time=%d, total_time=%d, time_left=%d" %
                 (self.pid.pidstats['ispoint'],
                 self.pid.pidstats['setpoint'],
+                self.get_watcher_temp(),
                 self.pid.pidstats['err'],
                 self.pid.pidstats['pid'],
                 self.pid.pidstats['p'],
@@ -547,6 +548,12 @@ class RealOven(Oven):
         self.output.contactor(0)
         self.output.cool(0)
 
+    def get_watcher_temp(self):
+        temp = self.ovenwatcher.getCurrentTemp()
+        if (config.temp_scale == "f"):
+            temp = (temp - 32.0) * 5.0 / 9.0     
+        return temp      
+
     def heat_then_cool(self):
         self.output.contactor(1)
         pid = self.pid.compute(self.target,
@@ -566,9 +573,10 @@ class RealOven(Oven):
             self.output.cool(heat_off)
         time_left = self.totaltime - self.runtime
         try:
-            log.info("temp=%.2f, target=%.2f, error=%.2f, pid=%.2f, p=%.2f, i=%.2f, d=%.2f, heat_on=%.2f, heat_off=%.2f, run_time=%d, total_time=%d, time_left=%d" %
+            log.info("temp=%.2f, target=%.2f, watcherTemp=%.2f, error=%.2f, pid=%.2f, p=%.2f, i=%.2f, d=%.2f, heat_on=%.2f, heat_off=%.2f, run_time=%d, total_time=%d, time_left=%d" %
                 (self.pid.pidstats['ispoint'],
                 self.pid.pidstats['setpoint'],
+                self.get_watcher_temp(),
                 self.pid.pidstats['err'],
                 self.pid.pidstats['pid'],
                 self.pid.pidstats['p'],
