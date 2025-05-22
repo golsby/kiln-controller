@@ -1,28 +1,13 @@
 {
-    "cost": 0.11819192611111182,
-    "runtime": 12749.762377,
-    "temperature": 833.9861125513895,
-    "target": 834.5991368888889,
-    "state": "RUNNING",
-    "heat": 1.0,
-    "totaltime": 41400,
+    "cost": 0,
+    "runtime": 0,
+    "temperature": 1500.182155998012,
+    "target": 0,
+    "state": "IDLE",
+    "heat": 0,
+    "totaltime": 0,
     "kwh_rate": 0.1319,
     "currency_type": "$",
-    "profile": "Oceanside Advanced 8-Segment Full Fuse",
-    "pidstats": {
-        "time": 1733613558.0,
-        "timeDelta": 2.005542,
-        "setpoint": 834.5991368888889,
-        "ispoint": 833.4004702850067,
-        "err": 1.1986666038822023,
-        "errDelta": -0.15799345401392154,
-        "p": 23.973332077644045,
-        "i": 11.488613924374368,
-        "d": -15.799345401392154,
-        "kp": 20,
-        "ki": 50,
-        "kd": 100,
-        "pid": 19.662600600626263,
-        "out": 0.19662600600626262
-    }
+    "profile": null,
+    "pidstats": {}
 }
