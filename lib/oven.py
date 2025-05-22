@@ -45,6 +45,11 @@ class Output(object):
             if hasattr(config, 'gpio_arduino_reset'):
                 GPIO.setup(config.gpio_arduino_reset, GPIO.OUT)
                 GPIO.output(config.gpio_arduino_reset, GPIO.HIGH)
+            if hasattr(config, 'gpio_contactor'):
+                GPIO.setup(config.gpio_contactor, GPIO.OUT)
+            if hasattr(config, 'gpio_arduino_reset'):
+                GPIO.setup(config.gpio_arduino_reset, GPIO.OUT)
+                GPIO.output(config.gpio_arduino_reset, GPIO.HIGH)
             self.active = True
             self.GPIO = GPIO
         except:
