@@ -9,3 +9,5 @@ thumbs.db
 #config.py
 .idea/*
 *.log
+state.json
+graph*

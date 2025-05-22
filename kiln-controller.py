@@ -268,7 +268,7 @@ def run_and_watch(profile, startat=0):
     max_temp = profile.get_max_temp()
     if (config.temp_scale == "f"):
         max_temp = (max_temp - 32.0) * 5.0 / 9.0   
-    max_temp += 20
+    max_temp += 40  # add 40C to max temp for safety
     ovenWatcher.oven.output.resetArduino()
     time.sleep(1)
     log.info("Kiln Watcher MAX set to {0}C".format(max_temp))

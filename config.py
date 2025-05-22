@@ -13,9 +13,8 @@ log_level = logging.INFO
 log_format = '%(asctime)s %(levelname)s %(name)s: %(message)s'
 
 ### Server
-listening_ip = "0.0.0.0"
 listening_port = 80
-# listening_port=80
+listening_ip = "0.0.0.0"
 
 ########################################################################
 # Cost Information

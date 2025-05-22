@@ -568,8 +568,8 @@ $(document).ready(function()
 
                 $.each(x.log, function(i,v) {
                     graph.live.data.push([v.runtime, v.temperature]);
-                    graph.plot = $.plot("#graph_container", [ graph.profile, graph.live ] , getOptions());
                 });
+                graph.plot = $.plot("#graph_container", [ graph.profile, graph.live ] , getOptions());
             }
 
             if(state!="EDIT")
