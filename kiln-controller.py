@@ -284,7 +284,7 @@ def get_profiles():
     except:
         profile_files = []
     profiles = []
-    for filename in profile_files:
+    for filename in sort(profile_files):
         with open(os.path.join(profile_path, filename), 'r') as f:
             profiles.append(json.load(f))
     return json.dumps(profiles)
