@@ -520,7 +520,7 @@ class SimulatedOven(Oven):
         time_left = self.totaltime - self.runtime
 
         try:
-            if (self.absolute_start_time - datetime.datetime.now()) % self.time_log_interval < self.time_step:
+            if (self.absolute_start_time - datetime.datetime.now()).seconds % self.time_log_interval < self.time_step:
                 log.info("temp=%.2f, %.2f, error=%.2f, pid=%.2f, p=%.2f, i=%.2f, d=%.2f, heat_on=%.2f, heat_off=%.2f, run_time=%d, total_time=%d, time_left=%d" %
                     (self.pid.pidstats['ispoint'],
                     self.pid.pidstats['setpoint'],
@@ -585,7 +585,7 @@ class RealOven(Oven):
             self.output.cool(heat_off)
         time_left = self.totaltime - self.runtime
         try:
-            if (self.absolute_start_time - datetime.datetime.now()) % self.time_log_interval < self.time_step:
+            if (self.absolute_start_time - datetime.datetime.now()).seconds % self.time_log_interval < self.time_step:
                 log.info("temp=%.2f, target=%.2f, error=%.2f, pid=%.2f, p=%.2f, i=%.2f, d=%.2f, heat_on=%.2f, heat_off=%.2f, run_time=%d, total_time=%d, time_left=%d" %
                     (self.pid.pidstats['ispoint'],
                     self.pid.pidstats['setpoint'],
