@@ -67,7 +67,7 @@ def index():
 
 @app.get('/api/stats')
 def handle_api():
-    log.info("/api/stats command received")
+    log.debug("/api/stats command received")
     if hasattr(oven,'pid'):
         if hasattr(oven.pid,'pidstats'):
             return json.dumps(oven.pid.pidstats)
@@ -75,13 +75,13 @@ def handle_api():
 
 @app.post('/api')
 def handle_api():
-    log.info("/api is alive")
+    log.debug("/api is alive")
 
 
     # run a kiln schedule
     if bottle.request.json['cmd'] == 'run':
         wanted = bottle.request.json['profile']
-        log.info('api requested run of profile = %s' % wanted)
+        log.debug('api requested run of profile = %s' % wanted)
 
         # start at a specific minute in the schedule
         # for restarting and skipping over early parts of a schedule
@@ -100,17 +100,17 @@ def handle_api():
         run_and_watch(profile, startat=startat)
 
     if bottle.request.json['cmd'] == 'stop':
-        log.info("api stop command received")
+        log.debug("api stop command received")
         oven.abort_run()
 
     if bottle.request.json['cmd'] == 'memo':
-        log.info("api memo command received")
+        log.debug("api memo command received")
         memo = bottle.request.json['memo']
-        log.info("memo=%s" % (memo))
+        log.debug("memo=%s" % (memo))
 
     # get stats during a run
     if bottle.request.json['cmd'] == 'stats':
-        log.info("api stats command received")
+        log.debug("api stats command received")
         if hasattr(oven,'pid'):
             if hasattr(oven.pid,'pidstats'):
                 return json.dumps(oven.pid.pidstats)
@@ -192,7 +192,7 @@ def handle_control():
 @app.route('/storage')
 def handle_storage():
     wsock = get_websocket_from_request()
-    log.info("websocket (storage) opened")
+    log.debug("websocket (storage) opened")
     while True:
         try:
             message = wsock.receive()
@@ -232,34 +232,34 @@ def handle_storage():
                     wsock.send(get_profiles())
         except WebSocketError:
             break
-    log.info("websocket (storage) closed")
+    log.debug("websocket (storage) closed")
 
 
 @app.route('/config')
 def handle_config():
     wsock = get_websocket_from_request()
-    log.info("websocket (config) opened")
+    log.debug("websocket (config) opened")
     while True:
         try:
             message = wsock.receive()
             wsock.send(get_config())
         except WebSocketError:
             break
-    log.info("websocket (config) closed")
+    log.debug("websocket (config) closed")
 
 
 @app.route('/status')
 def handle_status():
     wsock = get_websocket_from_request()
     ovenWatcher.add_observer(wsock)
-    log.info("websocket (status) opened")
+    log.debug("websocket (status) opened")
     while True:
         try:
             message = wsock.receive()
             wsock.send("Your message was: %r" % message)
         except WebSocketError:
             break
-    log.info("websocket (status) closed")
+    log.debug("websocket (status) closed")
 
 
 def run_and_watch(profile, startat=0):
@@ -323,7 +323,7 @@ def get_config():
 def main():
     ip = "0.0.0.0"
     port = config.listening_port
-    log.info("listening on %s:%d" % (ip, port))
+    log.debug("listening on %s:%d" % (ip, port))
 
     server = WSGIServer((ip, port), app,
                         handler_class=WebSocketHandler)

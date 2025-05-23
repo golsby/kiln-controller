@@ -97,7 +97,7 @@ class Board(object):
                 #from max31855 import MAX31855, MAX31855Error
                 self.name='MAX31855'
                 self.active = True
-                log.info("import %s " % (self.name))
+                log.debug("import %s " % (self.name))
             except ImportError:
                 msg = "max31855 config set, but import failed"
                 log.warning(msg)
@@ -107,7 +107,7 @@ class Board(object):
                 #from max31856 import MAX31856, MAX31856Error
                 self.name='MAX31856'
                 self.active = True
-                log.info("import %s " % (self.name))
+                log.debug("import %s " % (self.name))
             except ImportError:
                 msg = "max31856 config set, but import failed"
                 log.warning(msg)
@@ -147,7 +147,7 @@ class TempSensorReal(TempSensor):
         self.bad_stamp = 0
 
         if config.max31855:
-            log.info("init MAX31855")
+            log.debug("init MAX31855")
             from max31855 import MAX31855, MAX31855Error
             self.thermocouple = MAX31855(config.gpio_sensor_cs,
                                      config.gpio_sensor_clock,
@@ -155,7 +155,7 @@ class TempSensorReal(TempSensor):
                                      config.temp_scale)
 
         if config.max31856:
-            log.info("init MAX31856")
+            log.debug("init MAX31856")
             from max31856 import MAX31856
             software_spi = { 'cs': config.gpio_sensor_cs,
                              'clk': config.gpio_sensor_clock,
@@ -170,7 +170,7 @@ class TempSensorReal(TempSensor):
     def run(self):
         '''use a moving average of config.temperature_average_samples across the time_step'''
         temps = []
-        # log.info("Running thermocouple sensor.")
+        # log.debug("Running thermocouple sensor.")
         try:
             while True:
                 # reset error counter if time is up
@@ -183,9 +183,9 @@ class TempSensorReal(TempSensor):
                     self.ok_count = 0
                     self.bad_stamp = time.time()
 
-                # log.info("Reading thermocouple")
+                # log.debug("Reading thermocouple")
                 temp = self.thermocouple.get()
-                #log.info(">>> T: {0}".format(temp))
+                #log.debug(">>> T: {0}".format(temp))
                 self.noConnection = self.thermocouple.noConnection
                 self.shortToGround = self.thermocouple.shortToGround
                 self.shortToVCC = self.thermocouple.shortToVCC
@@ -196,7 +196,7 @@ class TempSensorReal(TempSensor):
                     is_bad_value |= self.shortToGround | self.shortToVCC
 
                 if not is_bad_value:
-                    # log.info(temp)
+                    # log.debug(temp)
                     temps.append(temp)
                     if len(temps) > config.temperature_average_samples:
                         del temps[0]
@@ -209,7 +209,7 @@ class TempSensorReal(TempSensor):
                 if len(temps):
                     self.temperature = self.get_avg_temp(temps)
 
-                #log.info("Sleeping {0}".format(self.sleeptime))
+                #log.debug("Sleeping {0}".format(self.sleeptime))
                 time.sleep(self.sleeptime)
         except Exception as ex:
             import traceback
@@ -257,16 +257,16 @@ class Oven(threading.Thread):
         self.reset()
 
         if self.board.temp_sensor.noConnection:
-            log.info("Refusing to start profile - thermocouple not connected")
+            log.error("Refusing to start profile - thermocouple not connected")
             return
         if self.board.temp_sensor.shortToGround:
-            log.info("Refusing to start profile - thermocouple short to ground")
+            log.error("Refusing to start profile - thermocouple short to ground")
             return
         if self.board.temp_sensor.shortToVCC:
-            log.info("Refusing to start profile - thermocouple short to VCC")
+            log.error("Refusing to start profile - thermocouple short to VCC")
             return
         if self.board.temp_sensor.unknownError:
-            log.info("Refusing to start profile - thermocouple unknown error")
+            log.error("Refusing to start profile - thermocouple unknown error")
             return
 
         self.startat = startat * 60
@@ -294,15 +294,14 @@ class Oven(threading.Thread):
                 config.thermocouple_offset
             # kiln too cold, wait for it to heat up
             if self.target - temp > config.kiln_catchup_window:
-                log.info("kiln must catch up, too cold, shifting schedule")
+                log.debug("kiln must catch up, too cold, shifting schedule")
                 self.start_time = datetime.datetime.now() - datetime.timedelta(milliseconds = self.runtime * 1000)
             # kiln too hot, wait for it to cool down
             if temp - self.target > config.kiln_catchup_window:
-                log.info("kiln must catch up, too hot, shifting schedule")
+                log.debug("kiln must catch up, too hot, shifting schedule")
                 self.start_time = datetime.datetime.now() - datetime.timedelta(milliseconds = self.runtime * 1000)
 
     def update_runtime(self):
-
         runtime_delta = datetime.datetime.now() - self.start_time
         if runtime_delta.total_seconds() < 0:
             runtime_delta = datetime.timedelta(0)
@@ -316,22 +315,22 @@ class Oven(threading.Thread):
         '''reset if the temperature is way TOO HOT, or other critical errors detected'''
         if (self.board.temp_sensor.temperature + config.thermocouple_offset >=
             config.emergency_shutoff_temp):
-            log.info("emergency!!! temperature too high")
+            log.error("emergency!!! temperature too high")
             if config.ignore_temp_too_high == False:
                 self.abort_run_with_error("ERROR: Temp too high")
 
         if self.board.temp_sensor.noConnection:
-            log.info("emergency!!! lost connection to thermocouple")
+            log.error("emergency!!! lost connection to thermocouple")
             if config.ignore_lost_connection_tc == False:
                 self.abort_run_with_error("ERROR: Lost connection to thermocouple")
 
         if self.board.temp_sensor.unknownError:
-            log.info("emergency!!! unknown thermocouple error")
+            log.error("emergency!!! unknown thermocouple error")
             if config.ignore_unknown_tc_error == False:
                 self.abort_run_with_error("ERROR: Uknown thermocouple error")
 
         if self.board.temp_sensor.bad_percent > 30:
-            log.info("emergency!!! too many errors in a short period")
+            log.error("emergency!!! too many errors in a short period")
             if config.ignore_too_many_tc_errors == False:
                 self.abort_run_with_error("ERROR: Too many thermocouple errors")
 
@@ -400,13 +399,13 @@ class Oven(threading.Thread):
         if not config.automatic_restarts == True:
             return False
         if self.state_file_is_old():
-            duplog.info("automatic restart not possible. state file does not exist or is too old.")
+            duplog.error("automatic restart not possible. state file does not exist or is too old.")
             return False
 
         with open(config.automatic_restart_state_file) as infile:
             d = json.load(infile)
         if d["state"] != "RUNNING":
-            duplog.info("automatic restart not possible. state = %s" % (d["state"]))
+            duplog.error("automatic restart not possible. state = %s" % (d["state"]))
             return False
         return True
 
@@ -466,7 +465,7 @@ class SimulatedOven(Oven):
 
         # start thread
         self.start()
-        log.info("SimulatedOven started")
+        log.debug("SimulatedOven started")
 
     def heating_energy(self,pid):
         # using pid here simulates the element being on for
@@ -505,7 +504,7 @@ class SimulatedOven(Oven):
         if heat_on > 0:
             self.heat = heat_on
 
-        log.info("simulation: -> %dW heater: %.0f -> %dW oven: %.0f -> %dW env"            % (int(self.p_heat * pid),
+        log.debug("simulation: -> %dW heater: %.0f -> %dW oven: %.0f -> %dW env"            % (int(self.p_heat * pid),
             self.t_h,
             int(self.p_ho),
             self.t,
@@ -667,12 +666,12 @@ class PID():
         out4logs = 0
         dErr = 0
         if error < (-1 * config.pid_control_window):
-            log.info("kiln outside pid control window, max cooling")
+            log.debug("kiln outside pid control window, max cooling")
             output = 0
             # it is possible to set self.iterm=0 here and also below
             # but I dont think its needed
         elif error > (1 * config.pid_control_window):
-            log.info("kiln outside pid control window, max heating")
+            log.debug("kiln outside pid control window, max heating")
             output = 1
         else:
             icomp = (error * timeDelta * (1/self.ki))
