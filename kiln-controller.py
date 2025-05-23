@@ -12,6 +12,7 @@ import time
 from gevent.pywsgi import WSGIServer
 from geventwebsocket.handler import WebSocketHandler
 from geventwebsocket import WebSocketError
+from scripts.schedule_converter import convert_to_time_temp
 
 try:
     sys.dont_write_bytecode = True
@@ -278,6 +279,12 @@ def get_profiles():
     profiles = []
     for filename in sorted(profile_files):
         with open(os.path.join(profile_path, filename), 'r') as f:
+            profile = profiles.append(json.loads(f))
+            if "rth" in profile:
+                try:
+                    profile['data2'] = convert_to_time_temp(profile["rth"])
+                except:
+                    profile['data2'] = "unparsable input"
             profiles.append(json.load(f))
     return profiles
 
