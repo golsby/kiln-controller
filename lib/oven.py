@@ -273,7 +273,7 @@ class Oven(threading.Thread):
 
         self.startat = startat * 60
         self.runtime = self.startat
-        self.absolute_start_time = datetime.datetime.now() + datetime.timedelta(seconds=self.startat)
+        self.absolute_start_time = datetime.datetime.now()
         self.start_time = datetime.datetime.now() - datetime.timedelta(seconds=self.startat)
         self.profile = profile
         self.totaltime = profile.get_duration()
