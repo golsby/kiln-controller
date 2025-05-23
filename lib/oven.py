@@ -246,6 +246,8 @@ class Oven(threading.Thread):
         self.cost = 0
         self.state = "IDLE"
         self.profile = None
+        self.absolute_start_time = 0
+        self.absolute_runtime = 0
         self.start_time = 0
         self.runtime = 0
         self.totaltime = 0
@@ -271,6 +273,7 @@ class Oven(threading.Thread):
 
         self.startat = startat * 60
         self.runtime = self.startat
+        self.absolute_start_time = datetime.datetime.now() + datetime.timedelta(seconds=self.startat)
         self.start_time = datetime.datetime.now() - datetime.timedelta(seconds=self.startat)
         self.profile = profile
         self.totaltime = profile.get_duration()
@@ -305,8 +308,12 @@ class Oven(threading.Thread):
         runtime_delta = datetime.datetime.now() - self.start_time
         if runtime_delta.total_seconds() < 0:
             runtime_delta = datetime.timedelta(0)
-
         self.runtime = runtime_delta.total_seconds()
+
+        absolute_runtime_delta = datetime.datetime.now() - self.absolute_start_time
+        if absolute_runtime_delta.total_seconds() < 0:
+            absolute_runtime_delta = datetime.timedelta(0)
+        self.absolute_runtime = absolute_runtime_delta.total_seconds()
 
     def update_target_temp(self):
         self.target = self.profile.get_target_temperature(self.runtime)
@@ -513,7 +520,7 @@ class SimulatedOven(Oven):
         time_left = self.totaltime - self.runtime
 
         try:
-            if self.runtime % self.time_log_interval < self.time_step:
+            if (self.absolute_start_time - datetime.datetime.now()) % self.time_log_interval < self.time_step:
                 log.info("temp=%.2f, %.2f, error=%.2f, pid=%.2f, p=%.2f, i=%.2f, d=%.2f, heat_on=%.2f, heat_off=%.2f, run_time=%d, total_time=%d, time_left=%d" %
                     (self.pid.pidstats['ispoint'],
                     self.pid.pidstats['setpoint'],
@@ -524,7 +531,7 @@ class SimulatedOven(Oven):
                     self.pid.pidstats['d'],
                     heat_on,
                     heat_off,
-                    self.runtime,
+                    self.absolute_runtime,
                     self.totaltime,
                     time_left))
         except KeyError:
@@ -578,7 +585,7 @@ class RealOven(Oven):
             self.output.cool(heat_off)
         time_left = self.totaltime - self.runtime
         try:
-            if self.runtime % self.time_log_interval < self.time_step:
+            if (self.absolute_start_time - datetime.datetime.now()) % self.time_log_interval < self.time_step:
                 log.info("temp=%.2f, target=%.2f, error=%.2f, pid=%.2f, p=%.2f, i=%.2f, d=%.2f, heat_on=%.2f, heat_off=%.2f, run_time=%d, total_time=%d, time_left=%d" %
                     (self.pid.pidstats['ispoint'],
                     self.pid.pidstats['setpoint'],
@@ -589,7 +596,7 @@ class RealOven(Oven):
                     self.pid.pidstats['d'],
                     heat_on,
                     heat_off,
-                    self.runtime,
+                    self.absolute_runtime,
                     self.totaltime,
                     time_left))
         except KeyError:
