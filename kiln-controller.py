@@ -94,9 +94,7 @@ def handle_api():
         if profile is None:
             return { "success" : False, "error" : "profile %s not found" % wanted }
 
-        # FIXME juggling of json should happen in the Profile class
-        profile_json = json.dumps(profile)
-        profile = Profile(profile_json)
+        profile = Profile(profile)
         run_and_watch(profile, startat=startat)
 
     if bottle.request.json['cmd'] == 'stop':
@@ -122,12 +120,8 @@ def find_profile(wanted):
     given a wanted profile name, find it and return the parsed
     json profile object or None.
     '''
-    #load all profiles from disk
-    profiles = get_profiles()
-    json_profiles = json.loads(profiles)
-
     # find the wanted profile
-    for profile in json_profiles:
+    for profile in get_profiles():
         if profile['name'] == wanted:
             return profile
     return None
@@ -160,8 +154,7 @@ def handle_control():
                     log.info("RUN command received")
                     profile_obj = msgdict.get('profile')
                     if profile_obj:
-                        profile_json = json.dumps(profile_obj)
-                        profile = Profile(profile_json)
+                        profile = Profile(profile_obj)
                         
                     run_and_watch(profile)
 
@@ -169,8 +162,7 @@ def handle_control():
                     log.info("SIMULATE command received")
                     #profile_obj = msgdict.get('profile')
                     #if profile_obj:
-                    #    profile_json = json.dumps(profile_obj)
-                    #    profile = Profile(profile_json)
+                    #    profile = Profile(profile_obj)
                     #simulated_oven = Oven(simulate=True, time_step=0.05)
                     #simulation_watcher = OvenWatcher(simulated_oven)
                     #simulation_watcher.add_observer(wsock)
@@ -207,14 +199,14 @@ def handle_storage():
 
             if message == "GET":
                 log.info("GET command received")
-                wsock.send(get_profiles())
+                wsock.send(json.dumps(get_profiles()))
             elif msgdict.get("cmd") == "DELETE":
                 log.info("DELETE command received")
                 profile_obj = msgdict.get('profile')
                 if delete_profile(profile_obj):
                   msgdict["resp"] = "OK"
                 wsock.send(json.dumps(msgdict))
-                #wsock.send(get_profiles())
+                #wsock.send(json.dumps(get_profiles()))
             elif msgdict.get("cmd") == "PUT":
                 log.info("PUT command received")
                 profile_obj = msgdict.get('profile')
@@ -229,7 +221,7 @@ def handle_storage():
                     log.debug("websocket (storage) sent: %s" % message)
 
                     wsock.send(json.dumps(msgdict))
-                    wsock.send(get_profiles())
+                    wsock.send(json.dumps(get_profiles()))
         except WebSocketError:
             break
     log.debug("websocket (storage) closed")
@@ -287,7 +279,7 @@ def get_profiles():
     for filename in sorted(profile_files):
         with open(os.path.join(profile_path, filename), 'r') as f:
             profiles.append(json.load(f))
-    return json.dumps(profiles)
+    return profiles
 
 
 def save_profile(profile, force=False):
