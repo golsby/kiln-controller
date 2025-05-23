@@ -149,12 +149,12 @@ def get_websocket_from_request():
 @app.route('/control')
 def handle_control():
     wsock = get_websocket_from_request()
-    log.info("websocket (control) opened")
+    log.debug("websocket (control) opened")
     while True:
         try:
             message = wsock.receive()
             if message:
-                log.info("Received (control): %s" % message)
+                log.debug("Received (control): %s" % message)
                 msgdict = json.loads(message)
                 if msgdict.get("cmd") == "RUN":
                     log.info("RUN command received")
@@ -186,7 +186,7 @@ def handle_control():
         except WebSocketError as e:
             log.error(e)
             break
-    log.info("websocket (control) closed")
+    log.debug("websocket (control) closed")
 
 
 @app.route('/storage')

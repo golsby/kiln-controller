@@ -239,6 +239,7 @@ class Oven(threading.Thread):
         self.daemon = True
         self.temperature = 0
         self.time_step = config.sensor_time_wait
+        self.time_log_interval = config.time_log_interval
         self.reset()
 
     def reset(self):
@@ -513,19 +514,20 @@ class SimulatedOven(Oven):
         time_left = self.totaltime - self.runtime
 
         try:
-            log.info("temp=%.2f, %.2f, error=%.2f, pid=%.2f, p=%.2f, i=%.2f, d=%.2f, heat_on=%.2f, heat_off=%.2f, run_time=%d, total_time=%d, time_left=%d" %
-                (self.pid.pidstats['ispoint'],
-                self.pid.pidstats['setpoint'],
-                self.pid.pidstats['err'],
-                self.pid.pidstats['pid'],
-                self.pid.pidstats['p'],
-                self.pid.pidstats['i'],
-                self.pid.pidstats['d'],
-                heat_on,
-                heat_off,
-                self.runtime,
-                self.totaltime,
-                time_left))
+            if self.runtime % self.time_log_interval < self.time_step:
+                log.info("temp=%.2f, %.2f, error=%.2f, pid=%.2f, p=%.2f, i=%.2f, d=%.2f, heat_on=%.2f, heat_off=%.2f, run_time=%d, total_time=%d, time_left=%d" %
+                    (self.pid.pidstats['ispoint'],
+                    self.pid.pidstats['setpoint'],
+                    self.pid.pidstats['err'],
+                    self.pid.pidstats['pid'],
+                    self.pid.pidstats['p'],
+                    self.pid.pidstats['i'],
+                    self.pid.pidstats['d'],
+                    heat_on,
+                    heat_off,
+                    self.runtime,
+                    self.totaltime,
+                    time_left))
         except KeyError:
             pass
 

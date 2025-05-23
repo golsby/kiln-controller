@@ -64,6 +64,7 @@ gpio_sensor_di = 10 # only used with max31856
 # on & off and for how long. The thermocouple is read 
 # temperature_average_samples times during and the average value is used.
 sensor_time_wait = 2
+time_log_interval = 30 # seconds
 
 
 ########################################################################
