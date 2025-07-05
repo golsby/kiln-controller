@@ -78,7 +78,6 @@ def convert_to_rate_temp_hold(time_temp_schedule):
 if __name__ == "__main__":
     rate_temp_hold_text = """
     50/h to 450 hold 1h
-    50/h to 600 hold 0h
     50/h to 1050 hold 2h
     50/h to 1250 hold 2h
     50/h to 1350 hold 2h
