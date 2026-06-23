@@ -246,6 +246,26 @@ function abortTask()
     ws_control.send(JSON.stringify(cmd));
 }
 
+function clearProfile()
+{
+    if (state == "RUNNING") return;
+
+    // tell the server to drop any recorded profile/backlog so a
+    // reconnecting browser doesn't reload the old run
+    ws_control.send(JSON.stringify({"cmd": "CLEAR"}));
+
+    graph.profile.data = [];
+    graph.live.data = [];
+    graph.profile.points.show = false;
+    graph.profile.draggable = false;
+    graph.plot = $.plot("#graph_container", [ graph.profile, graph.live ], getOptions());
+
+    run_log = [];
+    $('#target_temp').html('---');
+    updateProgress(0);
+    $('#e2').select2('val', '');
+}
+
 function enterNewMode()
 {
     state="EDIT"
@@ -633,6 +653,7 @@ $(document).ready(function()
 
                     $("#nav_start").hide();
                     $("#nav_stop").show();
+                    $("#nav_clear").hide();
 
                     graph.live.data.push([x.runtime, x.temperature]);
                     graph.plot = $.plot("#graph_container", [ graph.profile, graph.live ] , getOptions());
@@ -652,6 +673,7 @@ $(document).ready(function()
                 {
                     $("#nav_start").show();
                     $("#nav_stop").hide();
+                    $("#nav_clear").show();
                     $('#state').html('<p class="ds-text">'+state+'</p>');
                 }
 

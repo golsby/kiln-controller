@@ -6,6 +6,9 @@ import logging
 from logging.handlers import RotatingFileHandler
 import json
 
+# load .env before importing gevent so settings like PURE_PYTHON take effect
+import loadenv
+
 import bottle
 import time
 #from bottle import post, get
@@ -172,6 +175,12 @@ def handle_control():
                 elif msgdict.get("cmd") == "STOP":
                     log.info("Stop command received")
                     oven.abort_run()
+                elif msgdict.get("cmd") == "CLEAR":
+                    log.info("CLEAR command received")
+                    if oven.state == "RUNNING":
+                        log.warning("ignoring CLEAR while a profile is running")
+                    else:
+                        ovenWatcher.clear()
                 elif msgdict.get("cmd") == "RESET_WATCHER":
                     log.info("RESET_WATCHER command received")
                     ovenWatcher.arduinoWatcher.reset()
@@ -262,8 +271,9 @@ def run_and_watch(profile, startat=0):
     if (config.temp_scale == "f"):
         max_temp = (max_temp - 32.0) * 5.0 / 9.0   
     max_temp += 40  # add 40C to max temp for safety
-    ovenWatcher.oven.output.resetArduino()
-    time.sleep(1)
+    if hasattr(ovenWatcher.oven, 'output'):
+        ovenWatcher.oven.output.resetArduino()
+        time.sleep(1)
     log.info("Kiln Watcher MAX set to {0}C".format(max_temp))
     ovenWatcher.arduinoWatcher.setMaxTemp(max_temp)
     
@@ -278,14 +288,20 @@ def get_profiles():
         profile_files = []
     profiles = []
     for filename in sorted(profile_files):
-        with open(os.path.join(profile_path, filename), 'r') as f:
-            profile = profiles.append(json.loads(f))
-            if "rth" in profile:
-                try:
-                    profile['data2'] = convert_to_time_temp(profile["rth"])
-                except:
-                    profile['data2'] = "unparsable input"
-            profiles.append(json.load(f))
+        if not filename.endswith(".json"):
+            continue
+        try:
+            with open(os.path.join(profile_path, filename), 'r') as f:
+                profile = json.load(f)
+        except Exception as e:
+            log.error("could not load profile %s: %s" % (filename, e))
+            continue
+        if "rth" in profile:
+            try:
+                profile['data2'] = convert_to_time_temp(profile["rth"])
+            except:
+                profile['data2'] = "unparsable input"
+        profiles.append(profile)
     return profiles
 
 

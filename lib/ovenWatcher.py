@@ -1,7 +1,24 @@
 import threading,logging,json,time,datetime
+import config
 from oven import Oven
 from arduinoWatcher import ArduinoWatcher, KilnWatcherError, OverTempAlarmError
 log = logging.getLogger(__name__)
+
+
+class ArduinoWatcherSimulated(object):
+    '''no-op stand-in for the I2C over-temp watcher used when simulating,
+    since there is no /dev/i2c bus on a dev machine'''
+    def setMaxTemp(self, degreesC):
+        return degreesC
+
+    def getMaxTemp(self):
+        return 1340
+
+    def getCurrentTemp(self):
+        return 0.0
+
+    def reset(self):
+        pass
 
 class OvenWatcher(threading.Thread):
     def __init__(self,oven):
@@ -13,7 +30,10 @@ class OvenWatcher(threading.Thread):
         threading.Thread.__init__(self)
         self.daemon = True
         self.oven = oven
-        self.arduinoWatcher = ArduinoWatcher(0x8, 1)
+        if getattr(config, 'simulate', False):
+            self.arduinoWatcher = ArduinoWatcherSimulated()
+        else:
+            self.arduinoWatcher = ArduinoWatcher(0x8, 1)
         self.start()
 
 # FIXME - need to save runs of schedules in near-real-time
@@ -56,6 +76,14 @@ class OvenWatcher(threading.Thread):
             return self.last_log
         every_nth = int(totalpts / (maxpts - 1))
         return self.last_log[::every_nth]
+
+    def clear(self):
+        '''drop the recorded profile and log so reconnecting clients
+        don't reload a stale run. Only safe to call when idle.'''
+        self.last_profile = None
+        self.last_log = []
+        self.recording = False
+        log.info("cleared recorded profile and log")
 
     def record(self, profile):
         self.last_profile = profile

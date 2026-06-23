@@ -1,5 +1,6 @@
 import logging
 import os
+import loadenv  # loads .env into os.environ (no-op if .env is absent)
 
 # uncomment this if using MAX-31856
 #from lib.max31856 import MAX31856
@@ -8,12 +9,19 @@ import os
 #
 #   General options
 
+# DEBUG (development) vs production. Set KILN_DEBUG=true in a local,
+# gitignored .env file to run in development mode (simulated kiln,
+# unprivileged port, accelerated simulation). Production has no .env, so
+# DEBUG is False and the real-kiln defaults below apply.
+DEBUG = os.environ.get("KILN_DEBUG", "false").strip().lower() in ("1", "true", "yes", "on")
+
 ### Logging
 log_level = logging.INFO
 log_format = '%(asctime)s %(levelname)s %(name)s: %(message)s'
 
 ### Server
-listening_port = 80
+# port 80 needs root in production; use an unprivileged port in development
+listening_port = 8080 if DEBUG else 80
 listening_ip = "0.0.0.0"
 
 ########################################################################
@@ -91,7 +99,13 @@ stop_integral_windup = True
 ########################################################################
 #
 #   Simulation parameters
-simulate = False
+# simulate the kiln in development; drive the real hardware in production
+simulate = DEBUG
+# Speed up a simulated run by this factor so you don't watch it in real
+# time. 1 = real speed, 10 = ten times faster, etc. Only affects
+# simulations; the real kiln always runs at 1. Must be > 0. Override
+# locally with KILN_SIM_SPEEDUP in .env.
+sim_speedup = float(os.environ.get("KILN_SIM_SPEEDUP", "60" if DEBUG else "1"))
 sim_t_env      = 60.0   # deg C
 sim_c_heat     = 500.0  # J/K  heat capacity of heat element
 sim_c_oven     = 5000.0 # J/K  heat capacity of oven

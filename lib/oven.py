@@ -240,6 +240,9 @@ class Oven(threading.Thread):
         self.temperature = 0
         self.time_step = config.sensor_time_wait
         self.time_log_interval = config.time_log_interval
+        # wall-clock acceleration factor; always 1 for a real kiln,
+        # overridden by SimulatedOven to speed up simulated runs
+        self.runtime_multiplier = 1
         self.reset()
 
     def reset(self):
@@ -298,22 +301,22 @@ class Oven(threading.Thread):
             # kiln too cold, wait for it to heat up
             if self.target - temp > config.kiln_catchup_window:
                 log.debug("kiln must catch up, too cold, shifting schedule")
-                self.start_time = datetime.datetime.now() - datetime.timedelta(milliseconds = self.runtime * 1000)
+                self.start_time = datetime.datetime.now() - datetime.timedelta(milliseconds = (self.runtime / self.runtime_multiplier) * 1000)
             # kiln too hot, wait for it to cool down
             if temp - self.target > config.kiln_catchup_window:
                 log.debug("kiln must catch up, too hot, shifting schedule")
-                self.start_time = datetime.datetime.now() - datetime.timedelta(milliseconds = self.runtime * 1000)
+                self.start_time = datetime.datetime.now() - datetime.timedelta(milliseconds = (self.runtime / self.runtime_multiplier) * 1000)
 
     def update_runtime(self):
         runtime_delta = datetime.datetime.now() - self.start_time
         if runtime_delta.total_seconds() < 0:
             runtime_delta = datetime.timedelta(0)
-        self.runtime = runtime_delta.total_seconds()
+        self.runtime = runtime_delta.total_seconds() * self.runtime_multiplier
 
         absolute_runtime_delta = datetime.datetime.now() - self.absolute_start_time
         if absolute_runtime_delta.total_seconds() < 0:
             absolute_runtime_delta = datetime.timedelta(0)
-        self.absolute_runtime = absolute_runtime_delta.total_seconds()
+        self.absolute_runtime = absolute_runtime_delta.total_seconds() * self.runtime_multiplier
 
     def update_target_temp(self):
         self.target = self.profile.get_target_temperature(self.runtime)
@@ -470,9 +473,12 @@ class SimulatedOven(Oven):
 
         super().__init__()
 
+        # run the simulated clock faster than real time if configured
+        self.runtime_multiplier = getattr(config, 'sim_speedup', 1) or 1
+
         # start thread
         self.start()
-        log.debug("SimulatedOven started")
+        log.debug("SimulatedOven started at %dx speed" % self.runtime_multiplier)
 
     def heating_energy(self,pid):
         # using pid here simulates the element being on for
@@ -538,8 +544,9 @@ class SimulatedOven(Oven):
             pass
 
         # we don't actually spend time heating & cooling during
-        # a simulation, so sleep.
-        time.sleep(self.time_step)
+        # a simulation, so sleep. divide by the speedup factor so the
+        # run plays back faster than real time.
+        time.sleep(self.time_step / self.runtime_multiplier)
 
 
 class RealOven(Oven):
