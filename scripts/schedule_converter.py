@@ -7,7 +7,7 @@ def parse_rate_temp_hold(rate_temp_hold_text):
         parts = line.split()
         if len(parts) != 3:
             raise ValueError(f"Invalid line format: {line}")
-        
+
         rate = parts[0]
         if rate.endswith("/h"):
             rate = float(rate[:-2])
@@ -75,6 +75,30 @@ def convert_to_rate_temp_hold(time_temp_schedule):
             del(rate_temp_schedule[i])
     return rate_temp_schedule
 
+def format_hold_time(hours):
+    if hours < 1:
+        hours *= 60
+        hours = f'{hours:.0f}m'
+    else:
+        hours = f'{hours:.2f}h'
+    return hours
+
+def print_rate_temp_hold_schedule(schedule):
+    for segment in schedule:
+        hold = format_hold_time(segment[2])
+        print(f"{segment[0]:.0f}°F/h to {segment[1]:.0f}°F hold {hold}")
+
+def print_time_temp_schedule(schedule):
+    for segment in schedule:
+        print(f"{segment[0]*60:.0f} min -> {segment[1]} °F")
+
+def dump_seconds_temp_schedule(schedule):
+    pass
+
+def read_seconds_temp_schedule(schedule):
+    minutes_temp_schedule = [[x[0] / 60, x[1]] for x in schedule]
+    return minutes_temp_schedule
+
 if __name__ == "__main__":
     rate_temp_hold_text = """
     50/h to 450 hold 1h
@@ -98,19 +122,28 @@ if __name__ == "__main__":
       [30, 800, 15/60],
       [50, 700, 10/60],
       [250, 100, 1/60]
-    ]    
+    ]
 
-    parsed_rate_temp_hold = parse_rate_temp_hold(rate_temp_hold_text)
-
-    for segment in parsed_rate_temp_hold:
-        print(f"Rate: {segment[0]} °F/h, Temp: {segment[1]} °F, Hold: {segment[2]} h")
-
-    time_temp_schedule = convert_to_time_temp(parsed_rate_temp_hold)
-    print("Time-Temperature Schedule:")
-    for t in time_temp_schedule:
-        print(f"{t[0]*60:.0f} min -> {t[1]} °F")
-
-    rate_temp_schedule = convert_to_rate_temp_hold(time_temp_schedule)
+    time_temp_schedule = [
+        [60, 200], [2400, 250], [4200, 250], [15900, 1050], [17700, 1050], [20580, 1250], [21180, 1250], [22620, 1350], [23820, 1350], [25200, 1465], [25800, 1465], [25860, 950], [29400, 950], [35700, 800], [36300, 800], [44700, 100]
+    ]
+    tts = [(x[0]/(60*60), x[1]) for x in time_temp_schedule]
+    rate_temp_schedule = convert_to_rate_temp_hold(tts)
     print("Rate-Temperature Schedule:")
-    for segment in rate_temp_schedule:
-        print(f"{segment[0]:.0f}/h to {segment[1]:.0f} hold {segment[2]:.2f}h")
+    print_rate_temp_hold_schedule(rate_temp_schedule)
+
+
+    # parsed_rate_temp_hold = parse_rate_temp_hold(rate_temp_hold_text)
+
+    # for segment in parsed_rate_temp_hold:
+    #     print(f"Rate: {segment[0]} °F/h, Temp: {segment[1]} °F, Hold: {segment[2]} h")
+
+    # time_temp_schedule = convert_to_time_temp(parsed_rate_temp_hold)
+    # print("Time-Temperature Schedule:")
+    # for t in time_temp_schedule:
+    #     print(f"{t[0]*60:.0f} min -> {t[1]} °F")
+
+    # rate_temp_schedule = convert_to_rate_temp_hold(time_temp_schedule)
+    # print("Rate-Temperature Schedule:")
+    # for segment in rate_temp_schedule:
+    #     print(f"{segment[0]:.0f}/h to {segment[1]:.0f} hold {segment[2]:.2f}h")
