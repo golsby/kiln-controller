@@ -1,3 +1,83 @@
+class Segment:
+    """One ramp-and-hold step of a firing schedule, in canonical units.
+
+    rate   - ramp rate in degrees per second (>= 0; the direction of the
+             ramp is implied by target vs. the current setpoint, not by the
+             sign of rate)
+    target - temperature to ramp to
+    hold   - soak time at target, in seconds
+    """
+    def __init__(self, rate, target, hold=0.0):
+        self.rate = float(rate)      # deg/sec
+        self.target = float(target)  # deg
+        self.hold = float(hold)      # sec
+
+    @property
+    def rate_per_hour(self):
+        return self.rate * 3600.0
+
+    def __repr__(self):
+        return "Segment(rate=%.4g/hr, target=%g, hold=%gs)" % (
+            self.rate_per_hour, self.target, self.hold)
+
+
+def rth_to_segments(rth):
+    """Convert stored rate/temp/hold rows into canonical Segments.
+
+    Each row is [rate_per_hour, target_temp, hold_hours] - the format the UI
+    saves and parse_rate_temp_hold produces."""
+    segments = []
+    for row in rth:
+        rate_per_hour, target, hold_hours = row[0], row[1], row[2]
+        segments.append(Segment(rate=float(rate_per_hour) / 3600.0,
+                                 target=float(target),
+                                 hold=float(hold_hours) * 3600.0))
+    return segments
+
+
+def time_temp_to_segments(data):
+    """Derive canonical Segments from time/temp points [[seconds, temp], ...].
+
+    Each consecutive pair becomes a ramp segment (rate = |dT|/dt). A flat run
+    (same temperature) becomes a hold; consecutive holds at the same
+    temperature are merged onto the preceding segment."""
+    points = sorted(data)
+    segments = []
+    for i in range(1, len(points)):
+        t0, temp0 = points[i - 1]
+        t1, temp1 = points[i]
+        dt = t1 - t0
+        if dt <= 0:
+            continue
+        if temp1 == temp0:
+            if segments and segments[-1].target == temp1:
+                segments[-1].hold += dt
+            else:
+                segments.append(Segment(rate=0.0, target=temp1, hold=dt))
+        else:
+            segments.append(Segment(rate=abs(temp1 - temp0) / dt, target=temp1))
+    return segments
+
+
+def segments_to_points(segments, start_temp):
+    """Build time/temp points [[seconds, temp], ...] from Segments, for
+    drawing the ideal curve and computing duration. A ramp that cannot move
+    (rate 0 toward a different target) is treated as instantaneous."""
+    t = 0.0
+    temp = float(start_temp)
+    points = [[0, temp]]
+    for seg in segments:
+        if seg.target != temp:
+            if seg.rate > 0:
+                t += abs(seg.target - temp) / seg.rate
+            temp = seg.target
+            points.append([int(round(t)), temp])
+        if seg.hold > 0:
+            t += seg.hold
+            points.append([int(round(t)), temp])
+    return points
+
+
 def parse_rate_temp_hold(rate_temp_hold_text):
     rate_temp_hold = []
     for line in rate_temp_hold_text.strip().split("\n"):

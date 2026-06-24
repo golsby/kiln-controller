@@ -15,7 +15,7 @@ import time
 from gevent.pywsgi import WSGIServer
 from geventwebsocket.handler import WebSocketHandler
 from geventwebsocket import WebSocketError
-from scripts.schedule_converter import convert_to_time_temp
+from scripts.schedule_converter import rth_to_segments, segments_to_points
 
 try:
     sys.dont_write_bytecode = True
@@ -296,11 +296,15 @@ def get_profiles():
         except Exception as e:
             log.error("could not load profile %s: %s" % (filename, e))
             continue
-        if "rth" in profile:
+        if profile.get("rth"):
+            # rebuild the displayed curve from the rate/temp/hold segments
+            # so the graph matches what the controller will run
             try:
-                profile['data2'] = convert_to_time_temp(profile["rth"])
-            except:
-                profile['data2'] = "unparsable input"
+                segs = rth_to_segments(profile["rth"])
+                start_temp = profile["data"][0][1] if profile.get("data") else 100
+                profile["data"] = segments_to_points(segs, start_temp)
+            except Exception as e:
+                log.error("could not build curve for rth profile %s: %s" % (filename, e))
         profiles.append(profile)
     return profiles
 

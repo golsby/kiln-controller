@@ -7,6 +7,9 @@ import json
 import config
 import os
 
+from scripts.schedule_converter import (
+    rth_to_segments, time_temp_to_segments, segments_to_points)
+
 log = logging.getLogger(__name__)
 
 class DupFilter(object):
@@ -612,7 +615,19 @@ class RealOven(Oven):
 class Profile():
     def __init__(self, obj):
         self.name = obj["name"]
-        self.data = sorted(obj["data"])
+        rth = obj.get("rth")
+        if rth:
+            # rate/temp/hold is the source of truth for these profiles;
+            # build the ideal curve from the segments so what is displayed
+            # matches what the controller will actually run
+            self.segments = rth_to_segments(rth)
+            stored = obj.get("data")
+            self.start_temp = stored[0][1] if stored else 100
+            self.data = segments_to_points(self.segments, self.start_temp)
+        else:
+            self.data = sorted(obj["data"])
+            self.start_temp = self.data[0][1] if self.data else 0
+            self.segments = time_temp_to_segments(self.data)
 
     def get_duration(self):
         return max([t for (t, x) in self.data])
