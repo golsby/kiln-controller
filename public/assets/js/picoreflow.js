@@ -66,6 +66,74 @@ function updateProfile(id)
     $('#sel_prof_cost').html(kwh + ' kWh ('+ currency_type +': '+ cost +')');
     graph.profile.data = profiles[id].data;
     graph.plot = $.plot("#graph_container", [ graph.profile, graph.live ] , getOptions());
+    populateAimSegments(id);
+}
+
+// mirror of the server's segment derivation so segment indices line up
+// (rate in deg/hr, hold in seconds)
+function deriveSegments(profile)
+{
+    if (profile.rth && profile.rth.length) {
+        return profile.rth.map(function(r){ return {rate: r[0], target: r[1], hold: r[2]*3600}; });
+    }
+    var pts = (profile.data || []).slice().sort(function(a,b){ return a[0]-b[0]; });
+    var segs = [];
+    for (var i=1; i<pts.length; i++) {
+        var t0 = pts[i-1][0], T0 = pts[i-1][1], t1 = pts[i][0], T1 = pts[i][1];
+        var dt = t1 - t0;
+        if (dt <= 0) continue;
+        if (T1 === T0) {
+            // flat run = hold; merged onto the previous segment if same temp
+            if (segs.length && segs[segs.length-1].target === T1) { segs[segs.length-1].hold += dt; }
+            else segs.push({rate: 0, target: T1, hold: dt});
+        } else {
+            segs.push({rate: Math.abs(T1-T0)/dt*3600, target: T1, hold: 0});
+        }
+    }
+    return segs;
+}
+
+// nominal seconds to reach segment `index`'s target temp from startTemp
+// (mirrors Profile.nominal_time_to_segment on the server)
+function timeToSegmentTarget(segs, startTemp, index)
+{
+    var t = 0.0, temp = startTemp;
+    for (var i=0; i<segs.length; i++) {
+        var ratePerSec = segs[i].rate / 3600.0;
+        if (ratePerSec > 0 && segs[i].target !== temp) t += Math.abs(segs[i].target - temp) / ratePerSec;
+        if (i === index) return t;
+        temp = segs[i].target;
+        t += segs[i].hold;
+    }
+    return t;
+}
+
+function formatDuration(seconds)
+{
+    var s = Math.round(seconds);
+    var h = Math.floor(s / 3600);
+    var m = Math.round((s - h*3600) / 60);
+    if (m === 60) { h += 1; m = 0; }
+    return h > 0 ? (h + 'h ' + m + 'm') : (m + 'm');
+}
+
+function populateAimSegments(id)
+{
+    var profile = profiles[id];
+    var segs = deriveSegments(profile);
+    var startTemp = (profile.data && profile.data.length) ? profile.data[0][1] : 0;
+    var opts = '';
+    for (var i=0; i<segs.length; i++) {
+        var eta = formatDuration(timeToSegmentTarget(segs, startTemp, i));
+        opts += '<option value="'+i+'">Segment '+(i+1)+' — '+Math.round(segs[i].target)+'°'+temp_scale_display+' ('+eta+')</option>';
+    }
+    $('#aim_segment').html(opts);
+}
+
+function toggleAim()
+{
+    if ($('#aim_enable').is(':checked')) { $('#aim_fields').slideDown(); }
+    else { $('#aim_fields').slideUp(); }
 }
 
 function deleteProfile()
@@ -221,6 +289,15 @@ function runTask()
     {
         "cmd": "RUN",
         "profile": profiles[selected_profile]
+    }
+
+    // aimed start: reach the chosen segment's temperature at the given time
+    if ($('#aim_enable').is(':checked')) {
+        var tval = $('#aim_time').val();
+        if (tval) {
+            cmd.aim_segment = parseInt($('#aim_segment').val());
+            cmd.aim_time = Math.floor(new Date(tval).getTime() / 1000);
+        }
     }
 
     graph.live.data = [];
@@ -792,7 +869,7 @@ $(document).ready(function()
 
                 if (state!=state_last)
                 {
-                    if (state == 'RUNNING' && state_last == 'IDLE') {
+                    if (state == 'RUNNING' && (state_last == 'IDLE' || state_last == 'WAITING')) {
                         run_log = [['time','target','temp','heat','pid.error','pid.errorDelta','pid.p','pid.i','pid.d','pid.kp','pdi.ki','pid.kd']]
                     }
                     if(state_last == "RUNNING")
@@ -870,6 +947,21 @@ $(document).ready(function()
                   
 
 
+                }
+                else if (state == "WAITING")
+                {
+                    // aimed start: waiting (idle, no heat) for the start time
+                    $("#nav_start").hide();
+                    $("#nav_stop").show();   // Stop cancels the scheduled start
+                    $("#nav_hold").hide();
+                    $("#nav_advance").hide();
+                    $("#nav_clear").hide();
+                    $("#segment_table").hide();
+                    var wleft = parseInt(x.wait_remaining || 0);
+                    var weta = new Date(wleft * 1000).toISOString().substr(11, 8);
+                    updateProgress(0);
+                    $('#state').html('<span class="glyphicon glyphicon-time"></span>&nbsp;Starts in ' + weta);
+                    $('#target_temp').html('---');
                 }
                 else
                 {

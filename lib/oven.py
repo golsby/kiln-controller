@@ -261,9 +261,13 @@ class Oven(threading.Thread):
         self.totaltime = 0
         self.target = 0
         self.heat = 0
+        self.wait_until = None
         self.pid = PID(ki=config.pid_ki, kd=config.pid_kd, kp=config.pid_kp)
 
-    def run_profile(self, profile, startat=0):
+    def run_profile(self, profile, startat=0, wait_until=None):
+        '''Begin (or schedule) a profile. If wait_until (epoch seconds) is in
+        the future, the oven sits in WAITING (idle, no heat) until then, used
+        for an aimed start. Otherwise it begins immediately.'''
         self.reset()
 
         if self.board.temp_sensor.noConnection:
@@ -280,18 +284,31 @@ class Oven(threading.Thread):
             return
 
         self.startat = startat * 60
-        self.runtime = self.startat
-        self._last_runtime = self.startat
-        self.absolute_start_time = datetime.datetime.now()
-        self.start_time = datetime.datetime.now() - datetime.timedelta(seconds=self.startat)
         self.profile = profile
         # nominal total duration; actual time can extend if the kiln lags
         self.totaltime = profile.get_duration()
-        self.scheduler = SegmentScheduler(profile.segments, profile.start_temp)
+
+        if wait_until is not None and wait_until > time.time():
+            self.wait_until = wait_until
+            self.state = "WAITING"
+            log.info("Scheduled %s to start in %d seconds"
+                     % (profile.name, int(wait_until - time.time())))
+        else:
+            self._begin_run()
+
+    def _begin_run(self):
+        '''Actually start the firing now (used immediately or when an aimed
+        start's wait elapses).'''
+        self.runtime = self.startat
+        self._last_runtime = self.startat
+        self.wait_until = None
+        self.absolute_start_time = datetime.datetime.now()
+        self.start_time = datetime.datetime.now() - datetime.timedelta(seconds=self.startat)
+        self.scheduler = SegmentScheduler(self.profile.segments, self.profile.start_temp)
         if self.startat > 0:
             self.scheduler.fast_forward(self.startat)
         self.state = "RUNNING"
-        log.info("Running schedule %s starting at %d minutes" % (profile.name,startat))
+        log.info("Running schedule %s starting at %d minutes" % (self.profile.name, self.startat / 60))
         log.info("Starting")
 
     def abort_run(self):
@@ -441,6 +458,7 @@ class Oven(threading.Thread):
             'phase': self.scheduler.phase if self.scheduler else None,
             'manual_hold': self.scheduler.manual_hold if self.scheduler else False,
             'start_temp': self.scheduler.start_temp if self.scheduler else None,
+            'wait_remaining': max(0, self.wait_until - time.time()) if (self.state == "WAITING" and self.wait_until) else None,
             'segments': [
                 {'target': s.target, 'rate': s.rate_per_hour, 'hold': s.hold}
                 for s in self.scheduler.segments
@@ -511,6 +529,13 @@ class Oven(threading.Thread):
                 if self.should_i_automatic_restart() == True:
                     self.automatic_restart()
                 time.sleep(1)
+                continue
+            if self.state == "WAITING":
+                # aimed start: sit idle (no heat) until the scheduled time
+                if self.wait_until is None or time.time() >= self.wait_until:
+                    self._begin_run()
+                else:
+                    time.sleep(1)
                 continue
             if self.state == "RUNNING":
                 self.update_cost()
@@ -928,6 +953,24 @@ class Profile():
     
     def get_max_temp(self):
         return max([x for (t, x) in self.data])
+
+    def nominal_time_to_segment(self, index, start_temp=None):
+        '''Nominal seconds from the start of the run until segment `index`'s
+        target temperature is first reached (end of its ramp), assuming the
+        kiln stays on-rate from start_temp (defaults to the profile's start
+        temp). Used to back-compute an aimed start time.'''
+        if start_temp is None:
+            start_temp = self.start_temp
+        t = 0.0
+        temp = float(start_temp)
+        for i, s in enumerate(self.segments):
+            if s.rate > 0 and s.target != temp:
+                t += abs(s.target - temp) / s.rate
+            if i == index:
+                return t
+            temp = s.target
+            t += s.hold
+        return t
 
     def get_target_temperature(self, time):
         if time > self.get_duration():

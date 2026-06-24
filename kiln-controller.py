@@ -99,7 +99,8 @@ def handle_api():
             return { "success" : False, "error" : "profile %s not found" % wanted }
 
         profile = Profile(profile)
-        run_and_watch(profile, startat=startat)
+        wait_until = compute_aim_wait_until(profile, bottle.request.json)
+        run_and_watch(profile, startat=startat, wait_until=wait_until)
 
     if bottle.request.json['cmd'] == 'stop':
         log.debug("api stop command received")
@@ -159,8 +160,9 @@ def handle_control():
                     profile_obj = msgdict.get('profile')
                     if profile_obj:
                         profile = Profile(profile_obj)
-                        
-                    run_and_watch(profile)
+
+                    wait_until = compute_aim_wait_until(profile, msgdict)
+                    run_and_watch(profile, wait_until=wait_until)
 
                 elif msgdict.get("cmd") == "SIMULATE":
                     log.info("SIMULATE command received")
@@ -281,21 +283,46 @@ def handle_status():
     log.debug("websocket (status) closed")
 
 
-def run_and_watch(profile, startat=0):
+def run_and_watch(profile, startat=0, wait_until=None):
     # Set max kiln temp; kiln shuts down automatically if safety
     # thermocouple reaches this temperature
     max_temp = profile.get_max_temp()
     if (config.temp_scale == "f"):
-        max_temp = (max_temp - 32.0) * 5.0 / 9.0   
+        max_temp = (max_temp - 32.0) * 5.0 / 9.0
     max_temp += 40  # add 40C to max temp for safety
     if hasattr(ovenWatcher.oven, 'output'):
         ovenWatcher.oven.output.resetArduino()
         time.sleep(1)
     log.info("Kiln Watcher MAX set to {0}C".format(max_temp))
     ovenWatcher.arduinoWatcher.setMaxTemp(max_temp)
-    
-    oven.run_profile(profile,startat=startat)
+
+    oven.run_profile(profile, startat=startat, wait_until=wait_until)
     ovenWatcher.record(profile)
+
+
+def compute_aim_wait_until(profile, msgdict):
+    '''For an aimed start, back-compute the epoch start time so that the
+    chosen segment's target temperature is reached at the requested clock
+    time. Returns None for a normal (start-now) run.'''
+    aim_segment = msgdict.get('aim_segment')
+    aim_time = msgdict.get('aim_time')   # epoch seconds
+    if aim_segment is None or aim_time is None:
+        return None
+    try:
+        idx = int(aim_segment)
+        aim_time = float(aim_time)
+    except (TypeError, ValueError):
+        return None
+    # start from the kiln's current temperature so the first ramp is realistic
+    try:
+        current_temp = oven.board.temp_sensor.temperature + config.thermocouple_offset
+    except Exception:
+        current_temp = profile.start_temp
+    offset = profile.nominal_time_to_segment(idx, current_temp)
+    wait_until = aim_time - offset
+    log.info("aimed start: segment %d target in ~%ds, start at epoch %d"
+             % (idx, int(offset), int(wait_until)))
+    return wait_until
     
 
 def get_profiles():
