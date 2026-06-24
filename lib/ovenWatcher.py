@@ -82,12 +82,12 @@ class OvenWatcher(threading.Thread):
         return self.last_log[::every_nth]
 
     def clear(self):
-        '''drop the recorded profile and log so reconnecting clients
-        don't reload a stale run. Only safe to call when idle.'''
-        self.last_profile = None
+        '''drop the recorded run trace so reconnecting clients don't reload
+        a stale run, while keeping the last profile so its curve still shows.
+        Only safe to call when idle.'''
         self.last_log = []
         self.recording = False
-        log.info("cleared recorded profile and log")
+        log.info("cleared recorded run log")
 
     def record(self, profile):
         self.last_profile = profile

@@ -520,20 +520,18 @@ function clearProfile()
 {
     if (state == "RUNNING") return;
 
-    // tell the server to drop any recorded profile/backlog so a
-    // reconnecting browser doesn't reload the old run
+    // tell the server to drop the recorded run trace so a reconnecting
+    // browser doesn't reload it (the selected profile is kept)
     ws_control.send(JSON.stringify({"cmd": "CLEAR"}));
 
-    graph.profile.data = [];
+    // clear only the run-time (live) trace; leave the selected profile,
+    // its green curve, and the dropdown selection in place
     graph.live.data = [];
-    graph.profile.points.show = false;
-    graph.profile.draggable = false;
     graph.plot = $.plot("#graph_container", [ graph.profile, graph.live ], getOptions());
 
     run_log = [];
     $('#target_temp').html('---');
     updateProgress(0);
-    $('#e2').select2('val', '');
 }
 
 function enterNewMode()
