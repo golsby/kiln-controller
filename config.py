@@ -134,10 +134,19 @@ time_scale_profile  = "m" # s = Seconds | m = Minutes | h = Hours - Enter and vi
 # this should not replace you watching your kiln or use of a kiln-sitter
 emergency_shutoff_temp = 2264 #cone 7
 
-# If the current temperature is outside the pid control window,
-# delay the schedule until it does back inside. This allows for heating
-# and cooling as fast as possible and not continuing until temp is reached.
+# DEPRECATED (no longer used): the rate-paced SegmentScheduler replaces the
+# old "freeze the clock to catch up" behavior. See rate_tracking_window below.
 kiln_must_catch_up = True
+
+# Rate-paced control. The setpoint advances at each segment's programmed
+# rate but is never allowed to lead the actual kiln temperature by more
+# than this many degrees. If the kiln can't keep up, the ramp simply takes
+# longer (it never accelerates past the rate to catch up).
+rate_tracking_window = 10 # degrees
+
+# A hold/soak only counts down while the kiln is within this many degrees
+# of the segment target, so a hold is a true time-at-temperature.
+hold_tolerance = 5 # degrees
 
 # This setting is required. 
 # This setting defines the window within which PID control occurs.
