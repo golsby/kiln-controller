@@ -294,7 +294,7 @@ def run_and_watch(profile, startat=0, wait_until=None):
         ovenWatcher.oven.output.resetArduino()
         time.sleep(1)
     log.info("Kiln Watcher MAX set to {0}C".format(max_temp))
-    ovenWatcher.arduinoWatcher.setMaxTemp(max_temp)
+    ovenWatcher.set_max_temp(max_temp)
 
     oven.run_profile(profile, startat=startat, wait_until=wait_until)
     ovenWatcher.record(profile)

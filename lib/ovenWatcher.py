@@ -34,7 +34,40 @@ class OvenWatcher(threading.Thread):
             self.arduinoWatcher = ArduinoWatcherSimulated()
         else:
             self.arduinoWatcher = ArduinoWatcher(0x8, 1)
+        # watcher fault tracking
+        self.watcher_errors = 0
+        self.watcher_alarm = False
+        self.watcher_error_threshold = getattr(config, 'watcher_error_threshold', 3)
+        # last max temp pushed to the watcher (deg C), re-sent on a reset.
+        # default to a safe ceiling so the watcher is initialized while idle.
+        self.watcher_max_temp = getattr(config, 'watcher_default_max_temp_c', 1340)
+        self._watcher_initialized = False
         self.start()
+
+    def set_max_temp(self, degreesC):
+        '''Remember and push the watcher's max temp so we can re-send it
+        when recovering the watcher after a fault.'''
+        self.watcher_max_temp = degreesC
+        try:
+            self.arduinoWatcher.setMaxTemp(degreesC)
+        except Exception as e:
+            log.error("could not set watcher max temp: %s" % e)
+
+    def reset_watcher(self):
+        '''Attempt to recover a faulted Arduino watcher: reset it and re-send
+        the max temp. Restarting/resetting has been enough to recover it.'''
+        try:
+            if hasattr(self.oven, 'output'):
+                self.oven.output.resetArduino()
+            self.arduinoWatcher.setMaxTemp(self.watcher_max_temp)
+            log.info("attempted kiln watcher reset")
+        except Exception as e:
+            log.error("kiln watcher reset failed: %s" % e)
+
+    def send_alert(self, message):
+        '''Surface a high-priority alert. Logged for now; intended as the
+        hook for an SMS/push notification to the operator's phone.'''
+        log.error("ALERT: %s" % message)
 
 # FIXME - need to save runs of schedules in near-real-time
 # FIXME - this will enable re-start in case of power outage
@@ -45,27 +78,26 @@ class OvenWatcher(threading.Thread):
 # FIXME - this should not be done in the Watcher, but in the Oven class
 
     def run(self):
+        # initialize the watcher at startup so it reports valid readings
+        # (and doesn't error) while idle
+        if not self._watcher_initialized:
+            self.reset_watcher()
+            self._watcher_initialized = True
+
         while True:
             oven_state = self.oven.get_state()
-           
+            firing = oven_state.get("state") == "RUNNING"
+
             # record state for any new clients that join
-            if oven_state.get("state") == "RUNNING":
+            if firing:
                 self.last_log.append(oven_state)
             else:
                 self.recording = False
-                
-            try:
-                watcher_temp = self.arduinoWatcher.getCurrentTemp()
-                log.debug("Watcher temp: {0}".format(watcher_temp))
-            except KilnWatcherError:
-                log.error("Kiln Watcher Error")
-                self.oven.abort_run_with_error("ERROR: Kiln watcher error")
-            except OverTempAlarmError:
-                log.error("Kiln Watcher OVER TEMP ALARM")
-                self.oven.abort_run_with_error("ERROR: Safe Temp Exceeded")
-            except:
-                pass
 
+            self._poll_watcher(firing)
+
+            # surface the watcher alarm to clients without changing oven state
+            oven_state['watcher_alarm'] = self.watcher_alarm
             self.notify_all(oven_state)
             # Sample/notify at the oven's playback pace so a fast simulation
             # still produces a smooth graph (not ~12 points for a whole run),
@@ -73,6 +105,47 @@ class OvenWatcher(threading.Thread):
             interval = self.oven.time_step / getattr(self.oven, 'runtime_multiplier', 1)
             time.sleep(max(interval, 0.1))
    
+    def _poll_watcher(self, firing):
+        '''Read the watcher once and handle faults. Sensor/comm faults never
+        abort the firing: below threshold they're tolerated; at threshold we
+        try a reset; if that doesn't recover it we raise an alarm and keep
+        retrying. A genuine over-temp alarm still aborts. Faults are ignored
+        while idle.'''
+        try:
+            watcher_temp = self.arduinoWatcher.getCurrentTemp()
+            log.debug("Watcher temp: {0}".format(watcher_temp))
+            # a good read clears any fault state
+            if self.watcher_errors or self.watcher_alarm:
+                log.info("kiln watcher recovered")
+            self.watcher_errors = 0
+            self.watcher_alarm = False
+        except OverTempAlarmError:
+            # a genuine over-temp trip is a real safety event - abort
+            log.error("Kiln Watcher OVER TEMP ALARM")
+            if firing:
+                self.oven.abort_run_with_error("ERROR: Safe Temp Exceeded")
+        except KilnWatcherError:
+            if not firing:
+                # ignore watcher faults while idle
+                self.watcher_errors = 0
+                self.watcher_alarm = False
+                return
+            self.watcher_errors += 1
+            log.error("Kiln Watcher Error (%d)" % self.watcher_errors)
+            if self.watcher_errors == self.watcher_error_threshold:
+                log.warning("kiln watcher faulted - attempting reset")
+                self.reset_watcher()
+            elif self.watcher_errors > self.watcher_error_threshold:
+                if not self.watcher_alarm:
+                    self.watcher_alarm = True
+                    self.send_alert("Kiln watcher fault - firing continues on the "
+                                    "main thermocouple; retrying reset")
+                # keep trying to reset periodically (~every 5 polls)
+                if self.watcher_errors % 5 == 0:
+                    self.reset_watcher()
+        except Exception:
+            pass
+
     def lastlog_subset(self,maxpts=3000):
         '''send about maxpts from lastlog by skipping unwanted data'''
         totalpts = len(self.last_log)

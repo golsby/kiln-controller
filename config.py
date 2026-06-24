@@ -144,6 +144,16 @@ rate_tracking_window = 10 # degrees
 # of the segment target, so a hold is a true time-at-temperature.
 hold_tolerance = 5 # degrees
 
+# Arduino kiln watcher (independent over-temp safety). If it reports this
+# many consecutive errors during a firing, the controller tries to reset
+# it; if that doesn't recover it, it raises an alarm and keeps retrying but
+# does NOT stop the firing (the main thermocouple keeps controlling). A
+# genuine over-temp alarm from the watcher still aborts.
+watcher_error_threshold = 3
+# Safe max temp (deg C) used to initialize the watcher while idle, before a
+# profile sets the real ceiling.
+watcher_default_max_temp_c = 1340
+
 # This setting is required. 
 # This setting defines the window within which PID control occurs.
 # Outside this window (N degrees below or above the current target)

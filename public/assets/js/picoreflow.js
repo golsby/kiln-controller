@@ -975,6 +975,8 @@ $(document).ready(function()
                     $('#state').html('<p class="ds-text">'+state+'</p>');
                 }
 
+                if (x.watcher_alarm) { $('#watcher_alarm').show(); } else { $('#watcher_alarm').hide(); }
+
                 $('#act_temp').html(parseInt(x.temperature));
                 $('#heat').html('<div class="bar" style="height:'+x.pidstats.out*70+'%;"></div>')
                 if (x.cool > 0.5) { $('#cool').addClass("ds-led-cool-active"); } else { $('#cool').removeClass("ds-led-cool-active"); }
