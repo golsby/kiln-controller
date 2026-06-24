@@ -6,6 +6,7 @@ import logging
 import json
 import config
 import os
+import notifier
 
 from scripts.schedule_converter import (
     rth_to_segments, time_temp_to_segments, segments_to_points)
@@ -318,6 +319,10 @@ class Oven(threading.Thread):
     def abort_run_with_error(self, err):
         self.abort_run()
         self.state = err
+        # alert the operator that a firing was aborted (temp too high, lost
+        # thermocouple, over-temp, etc.). Unique key so each abort notifies.
+        notifier.pagerduty_event("trigger", "kiln-abort-%d" % int(time.time()),
+                                 "Kiln firing aborted: %s" % err)
 
     def set_manual_hold(self, value):
         '''Pause (True) or resume (False) the schedule at the current

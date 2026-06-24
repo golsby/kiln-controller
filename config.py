@@ -154,6 +154,12 @@ watcher_error_threshold = 3
 # profile sets the real ceiling.
 watcher_default_max_temp_c = 1340
 
+# PagerDuty alerting (optional). Put the Integration Key from a PagerDuty
+# service's "Events API V2" integration in PAGERDUTY_ROUTING_KEY in your
+# .env (per-machine, gitignored). Empty = PagerDuty disabled. Free plan
+# supports this and notifies the PagerDuty mobile app on your phone.
+pagerduty_routing_key = os.environ.get("PAGERDUTY_ROUTING_KEY", "")
+
 # This setting is required. 
 # This setting defines the window within which PID control occurs.
 # Outside this window (N degrees below or above the current target)

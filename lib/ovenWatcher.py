@@ -1,8 +1,11 @@
 import threading,logging,json,time,datetime
 import config
+import notifier
 from oven import Oven
 from arduinoWatcher import ArduinoWatcher, KilnWatcherError, OverTempAlarmError
 log = logging.getLogger(__name__)
+
+WATCHER_DEDUP_KEY = "kiln-watcher"
 
 
 class ArduinoWatcherSimulated(object):
@@ -65,9 +68,19 @@ class OvenWatcher(threading.Thread):
             log.error("kiln watcher reset failed: %s" % e)
 
     def send_alert(self, message):
-        '''Surface a high-priority alert. Logged for now; intended as the
-        hook for an SMS/push notification to the operator's phone.'''
+        '''Surface a high-priority alert: log it and raise a PagerDuty
+        incident (no-op if PagerDuty isn't configured).'''
         log.error("ALERT: %s" % message)
+        notifier.pagerduty_event("trigger", WATCHER_DEDUP_KEY, message)
+
+    def _clear_watcher_alarm(self, reason):
+        '''Clear watcher fault state and resolve the PagerDuty incident if
+        one was open.'''
+        if self.watcher_alarm:
+            log.info("kiln watcher recovered")
+            notifier.pagerduty_event("resolve", WATCHER_DEDUP_KEY, reason)
+        self.watcher_errors = 0
+        self.watcher_alarm = False
 
 # FIXME - need to save runs of schedules in near-real-time
 # FIXME - this will enable re-start in case of power outage
@@ -114,11 +127,8 @@ class OvenWatcher(threading.Thread):
         try:
             watcher_temp = self.arduinoWatcher.getCurrentTemp()
             log.debug("Watcher temp: {0}".format(watcher_temp))
-            # a good read clears any fault state
-            if self.watcher_errors or self.watcher_alarm:
-                log.info("kiln watcher recovered")
-            self.watcher_errors = 0
-            self.watcher_alarm = False
+            # a good read clears any fault state (and resolves the incident)
+            self._clear_watcher_alarm("Kiln watcher recovered")
         except OverTempAlarmError:
             # a genuine over-temp trip is a real safety event - abort
             log.error("Kiln Watcher OVER TEMP ALARM")
@@ -126,9 +136,8 @@ class OvenWatcher(threading.Thread):
                 self.oven.abort_run_with_error("ERROR: Safe Temp Exceeded")
         except KilnWatcherError:
             if not firing:
-                # ignore watcher faults while idle
-                self.watcher_errors = 0
-                self.watcher_alarm = False
+                # ignore watcher faults while idle (resolve any open incident)
+                self._clear_watcher_alarm("Kiln watcher alarm cleared (idle)")
                 return
             self.watcher_errors += 1
             log.error("Kiln Watcher Error (%d)" % self.watcher_errors)
