@@ -67,7 +67,11 @@ class OvenWatcher(threading.Thread):
                 pass
 
             self.notify_all(oven_state)
-            time.sleep(self.oven.time_step)
+            # Sample/notify at the oven's playback pace so a fast simulation
+            # still produces a smooth graph (not ~12 points for a whole run),
+            # but never faster than 10x/sec to avoid flooding the websocket.
+            interval = self.oven.time_step / getattr(self.oven, 'runtime_multiplier', 1)
+            time.sleep(max(interval, 0.1))
    
     def lastlog_subset(self,maxpts=3000):
         '''send about maxpts from lastlog by skipping unwanted data'''

@@ -306,12 +306,12 @@ class Oven(threading.Thread):
         runtime_delta = datetime.datetime.now() - self.start_time
         if runtime_delta.total_seconds() < 0:
             runtime_delta = datetime.timedelta(0)
-        self.runtime = runtime_delta.total_seconds() * self.runtime_multiplier
+        self.runtime = runtime_delta.total_seconds()
 
         absolute_runtime_delta = datetime.datetime.now() - self.absolute_start_time
         if absolute_runtime_delta.total_seconds() < 0:
             absolute_runtime_delta = datetime.timedelta(0)
-        self.absolute_runtime = absolute_runtime_delta.total_seconds() * self.runtime_multiplier
+        self.absolute_runtime = absolute_runtime_delta.total_seconds()
 
     def update_target_temp(self):
         if self.scheduler is None:
@@ -486,6 +486,15 @@ class SimulatedOven(Oven):
         self.start()
         log.debug("SimulatedOven started at %dx speed" % self.runtime_multiplier)
 
+    def update_runtime(self):
+        # Simulated time advances deterministically, one time_step per
+        # control-loop iteration, in lockstep with the physics. This keeps
+        # the schedule and the simulated temperature perfectly aligned no
+        # matter how fast we play it back - runtime_multiplier only sets the
+        # real sleep between iterations, not the size of the simulated step.
+        self.runtime += self.time_step
+        self.absolute_runtime += self.time_step
+
     def heating_energy(self,pid):
         # using pid here simulates the element being on for
         # only part of the time_step
@@ -511,7 +520,8 @@ class SimulatedOven(Oven):
     def heat_then_cool(self):
         pid = self.pid.compute(self.target,
                                self.board.temp_sensor.temperature +
-                               config.thermocouple_offset)
+                               config.thermocouple_offset,
+                               self.time_step)
         heat_on = float(self.time_step * pid)
         heat_off = float(self.time_step * (1 - pid))
 
@@ -583,7 +593,8 @@ class RealOven(Oven):
         self.output.contactor(1)
         pid = self.pid.compute(self.target,
                                self.board.temp_sensor.temperature +
-                               config.thermocouple_offset)
+                               config.thermocouple_offset,
+                               self.time_step)
         heat_on = float(self.time_step * pid)
         heat_off = float(self.time_step * (1 - pid))
 
@@ -804,9 +815,14 @@ class PID():
     # settled on -50 to 50 and then divide by 50 at the end. This results
     # in a larger PID control window and much more accurate control...
     # instead of what used to be binary on/off control.
-    def compute(self, setpoint, ispoint):
+    def compute(self, setpoint, ispoint, timeDelta=None):
         now = datetime.datetime.now()
-        timeDelta = (now - self.lastNow).total_seconds()
+        # Use the control timestep when provided so the integral and
+        # derivative terms are consistent regardless of how fast the loop
+        # actually runs in real time (e.g. an accelerated simulation).
+        # Falling back to wall-clock keeps the old behavior if not passed.
+        if timeDelta is None:
+            timeDelta = (now - self.lastNow).total_seconds()
 
         window_size = 100
 
