@@ -134,10 +134,6 @@ time_scale_profile  = "m" # s = Seconds | m = Minutes | h = Hours - Enter and vi
 # this should not replace you watching your kiln or use of a kiln-sitter
 emergency_shutoff_temp = 2264 #cone 7
 
-# DEPRECATED (no longer used): the rate-paced SegmentScheduler replaces the
-# old "freeze the clock to catch up" behavior. See rate_tracking_window below.
-kiln_must_catch_up = True
-
 # Rate-paced control. The setpoint advances at each segment's programmed
 # rate but is never allowed to lead the actual kiln temperature by more
 # than this many degrees. If the kiln can't keep up, the ramp simply takes
@@ -155,8 +151,7 @@ hold_tolerance = 5 # degrees
 # or 100% off because the kiln is too hot. No integral builds up
 # outside the window. The bigger you make the window, the more
 # integral you will accumulate. This should be a positive integer.
-pid_control_window = 5 #degrees 
-kiln_catchup_window = 30 #degrees
+pid_control_window = 5 #degrees
 
 # thermocouple offset
 # If you put your thermocouple in ice water and it reads 36F, you can

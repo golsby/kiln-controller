@@ -325,6 +325,10 @@ class Oven(threading.Thread):
         dt = self.runtime - self._last_runtime
         self._last_runtime = self.runtime
         self.target = self.scheduler.advance(dt, actual)
+        # totaltime is dynamic: segments extend when the kiln lags, so the
+        # estimated finish keeps moving. runtime + remaining keeps the
+        # progress bar and ETA sensible (and never over 100%).
+        self.totaltime = self.runtime + self.scheduler.remaining_seconds()
 
     def reset_if_emergency(self):
         '''reset if the temperature is way TOO HOT, or other critical errors detected'''
@@ -748,6 +752,27 @@ class SegmentScheduler():
                     self.hold_remaining -= remaining
                     remaining = 0.0
         return self.setpoint
+
+    def remaining_seconds(self):
+        '''Nominal time left assuming the kiln stays on-rate from the current
+        setpoint. This is an estimate - the actual time extends whenever the
+        kiln lags, so callers should treat it as a moving target.'''
+        if self.done:
+            return 0.0
+        seg = self.segments[self.index]
+        if self.phase == self.RAMP:
+            total = seg.hold
+            if seg.rate > 0:
+                total += abs(seg.target - self.setpoint) / seg.rate
+        else:  # HOLD
+            total = max(0.0, self.hold_remaining)
+        temp = seg.target
+        for s in self.segments[self.index + 1:]:
+            if s.rate > 0 and s.target != temp:
+                total += abs(s.target - temp) / s.rate
+            total += s.hold
+            temp = s.target
+        return total
 
 
 class Profile():
