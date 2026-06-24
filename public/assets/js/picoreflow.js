@@ -14,6 +14,7 @@ var temp_scale_display = "C";
 var kwh_rate = 0.26;
 var currency_type = "EUR";
 var run_log = []
+var manual_hold = false;
 
 var protocol = 'ws:';
 if (window.location.protocol == 'https:') {
@@ -244,6 +245,30 @@ function abortTask()
 {
     var cmd = {"cmd": "STOP"};
     ws_control.send(JSON.stringify(cmd));
+}
+
+function toggleHold()
+{
+    // manual_hold is kept in sync from the status feed; send the opposite
+    var cmd = manual_hold ? "RESUME" : "HOLD";
+    ws_control.send(JSON.stringify({"cmd": cmd}));
+}
+
+function advanceSegment()
+{
+    ws_control.send(JSON.stringify({"cmd": "ADVANCE"}));
+}
+
+function updateHoldButton()
+{
+    if (manual_hold) {
+        // blue (not green) so Resume isn't confused with the green Start button
+        $('#nav_hold').removeClass('btn-warning').addClass('btn-info')
+            .html('<span class="glyphicon glyphicon-play"></span> Resume');
+    } else {
+        $('#nav_hold').removeClass('btn-info').addClass('btn-warning')
+            .html('<span class="glyphicon glyphicon-pause"></span> Hold');
+    }
 }
 
 function clearProfile()
@@ -653,7 +678,12 @@ $(document).ready(function()
 
                     $("#nav_start").hide();
                     $("#nav_stop").show();
+                    $("#nav_hold").show();
+                    $("#nav_advance").show();
                     $("#nav_clear").hide();
+
+                    manual_hold = (x.manual_hold === true);
+                    updateHoldButton();
 
                     graph.live.data.push([x.runtime, x.temperature]);
                     graph.plot = $.plot("#graph_container", [ graph.profile, graph.live ] , getOptions());
@@ -673,6 +703,8 @@ $(document).ready(function()
                 {
                     $("#nav_start").show();
                     $("#nav_stop").hide();
+                    $("#nav_hold").hide();
+                    $("#nav_advance").hide();
                     $("#nav_clear").show();
                     $('#state').html('<p class="ds-text">'+state+'</p>');
                 }

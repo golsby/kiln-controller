@@ -302,6 +302,21 @@ class Oven(threading.Thread):
         self.abort_run()
         self.state = err
 
+    def set_manual_hold(self, value):
+        '''Pause (True) or resume (False) the schedule at the current
+        setpoint. No effect unless a profile is running.'''
+        if self.scheduler is None:
+            return
+        self.scheduler.manual_hold = bool(value)
+        log.info("manual hold %s" % ("engaged" if value else "released"))
+
+    def advance_segment(self):
+        '''Skip the rest of the current segment and start the next one.'''
+        if self.scheduler is None:
+            return
+        self.scheduler.skip_segment()
+        log.info("advanced to segment %d" % self.scheduler.index)
+
     def update_runtime(self):
         runtime_delta = datetime.datetime.now() - self.start_time
         if runtime_delta.total_seconds() < 0:
@@ -389,6 +404,7 @@ class Oven(threading.Thread):
             'pidstats': self.pid.pidstats,
             'segment': self.scheduler.index if self.scheduler else None,
             'phase': self.scheduler.phase if self.scheduler else None,
+            'manual_hold': self.scheduler.manual_hold if self.scheduler else False,
         }
         return state
 
@@ -650,6 +666,9 @@ class SegmentScheduler():
         self.index = 0
         self.hold_remaining = 0.0
         self.phase = self.DONE
+        # manual hold: when True the schedule is paused at the current
+        # setpoint (no ramp progress, no soak countdown) until resumed
+        self.manual_hold = False
         if rate_tracking_window is None:
             rate_tracking_window = getattr(config, 'rate_tracking_window', 10)
         if hold_tolerance is None:
@@ -682,7 +701,8 @@ class SegmentScheduler():
     def advance(self, dt, actual_temp):
         '''Advance the schedule by dt seconds given the current kiln temp,
         and return the new setpoint.'''
-        if self.done:
+        # manual hold pauses all progress, holding the current setpoint
+        if self.done or self.manual_hold:
             return self.setpoint
         dt = max(0.0, float(dt))
         seg = self.segments[self.index]
@@ -773,6 +793,19 @@ class SegmentScheduler():
             total += s.hold
             temp = s.target
         return total
+
+    def skip_segment(self):
+        '''Advance: drop the remainder of the current segment (ramp and
+        soak) and begin the next segment's ramp from the *current* setpoint
+        toward its target at its rate. Ends the schedule on the last
+        segment. Clears any manual hold.'''
+        self.manual_hold = False
+        if self.done:
+            return
+        self.index += 1
+        # _init_segment starts the next segment from the current setpoint,
+        # so there is no jump in the commanded temperature
+        self._init_segment()
 
 
 class Profile():

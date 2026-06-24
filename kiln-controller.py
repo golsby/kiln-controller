@@ -175,6 +175,15 @@ def handle_control():
                 elif msgdict.get("cmd") == "STOP":
                     log.info("Stop command received")
                     oven.abort_run()
+                elif msgdict.get("cmd") == "HOLD":
+                    log.info("HOLD command received")
+                    oven.set_manual_hold(True)
+                elif msgdict.get("cmd") == "RESUME":
+                    log.info("RESUME command received")
+                    oven.set_manual_hold(False)
+                elif msgdict.get("cmd") == "ADVANCE":
+                    log.info("ADVANCE command received")
+                    oven.advance_segment()
                 elif msgdict.get("cmd") == "CLEAR":
                     log.info("CLEAR command received")
                     if oven.state == "RUNNING":
