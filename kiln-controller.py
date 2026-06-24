@@ -184,6 +184,14 @@ def handle_control():
                 elif msgdict.get("cmd") == "ADVANCE":
                     log.info("ADVANCE command received")
                     oven.advance_segment()
+                elif msgdict.get("cmd") == "SET_SEGMENT_TARGET":
+                    log.info("SET_SEGMENT_TARGET command received")
+                    oven.set_segment_target(msgdict.get("segment"),
+                                            msgdict.get("target"))
+                elif msgdict.get("cmd") == "SET_SEGMENT_HOLD":
+                    log.info("SET_SEGMENT_HOLD command received")
+                    oven.set_segment_hold(msgdict.get("segment"),
+                                          msgdict.get("hold"))
                 elif msgdict.get("cmd") == "CLEAR":
                     log.info("CLEAR command received")
                     if oven.state == "RUNNING":

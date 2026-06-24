@@ -317,6 +317,41 @@ class Oven(threading.Thread):
         self.scheduler.skip_segment()
         log.info("advanced to segment %d" % self.scheduler.index)
 
+    def set_segment_target(self, index, temp):
+        '''Adjust a segment's target temperature for the running firing
+        only (the saved profile is untouched).'''
+        if self.scheduler is None:
+            return False
+        try:
+            index = int(index)
+            temp = float(temp)
+        except (TypeError, ValueError):
+            return False
+        # safety: never let a runtime edit reach the emergency cutoff
+        if temp >= config.emergency_shutoff_temp:
+            log.error("refusing segment %d target %g (>= emergency_shutoff_temp %g)"
+                      % (index, temp, config.emergency_shutoff_temp))
+            return False
+        ok = self.scheduler.set_segment_target(index, temp)
+        if ok:
+            log.info("segment %d target set to %g at runtime" % (index, temp))
+        return ok
+
+    def set_segment_hold(self, index, hold):
+        '''Adjust a segment's hold/soak duration (seconds) for the running
+        firing only (the saved profile is untouched).'''
+        if self.scheduler is None:
+            return False
+        try:
+            index = int(index)
+            hold = float(hold)
+        except (TypeError, ValueError):
+            return False
+        ok = self.scheduler.set_segment_hold(index, hold)
+        if ok:
+            log.info("segment %d hold set to %g s at runtime" % (index, hold))
+        return ok
+
     def update_runtime(self):
         runtime_delta = datetime.datetime.now() - self.start_time
         if runtime_delta.total_seconds() < 0:
@@ -405,6 +440,11 @@ class Oven(threading.Thread):
             'segment': self.scheduler.index if self.scheduler else None,
             'phase': self.scheduler.phase if self.scheduler else None,
             'manual_hold': self.scheduler.manual_hold if self.scheduler else False,
+            'start_temp': self.scheduler.start_temp if self.scheduler else None,
+            'segments': [
+                {'target': s.target, 'rate': s.rate_per_hour, 'hold': s.hold}
+                for s in self.scheduler.segments
+            ] if self.scheduler else None,
         }
         return state
 
@@ -806,6 +846,49 @@ class SegmentScheduler():
         # _init_segment starts the next segment from the current setpoint,
         # so there is no jump in the commanded temperature
         self._init_segment()
+
+    def set_segment_target(self, index, temp):
+        '''Change a segment's target temperature at runtime. Editing a
+        future segment just updates the value. Editing the active segment
+        re-aims toward the new target at the segment's rate without jumping
+        the setpoint: mid-ramp it simply changes where the ramp is headed
+        (reversing direction if needed); during a hold it leaves the hold,
+        ramps to the new target, then serves the remaining soak time.
+        Returns True if applied. Does not touch the saved profile.'''
+        if index < 0 or index >= len(self.segments):
+            return False
+        if self.done or index < self.index:
+            return False  # already-finished segment, nothing to do
+        seg = self.segments[index]
+        seg.target = float(temp)
+        if index == self.index and self.phase == self.HOLD:
+            # preserve the remaining soak, then ramp to the new target first
+            seg.hold = max(0.0, self.hold_remaining)
+            if abs(seg.target - self.setpoint) < 1e-9:
+                self.phase = self.HOLD
+            else:
+                self.phase = self.RAMP
+        # if the active segment is mid-RAMP, advance() re-aims automatically;
+        # future segments take effect when reached
+        return True
+
+    def set_segment_hold(self, index, hold):
+        '''Change a segment's hold/soak duration (seconds) at runtime. For
+        the segment that is currently soaking, the value is treated as the
+        total soak, so the remaining time is adjusted for what has already
+        elapsed (and the soak ends immediately if it is already satisfied).
+        Returns True if applied. Does not touch the saved profile.'''
+        if index < 0 or index >= len(self.segments):
+            return False
+        if self.done or index < self.index:
+            return False
+        hold = max(0.0, float(hold))
+        seg = self.segments[index]
+        if index == self.index and self.phase == self.HOLD:
+            elapsed = seg.hold - self.hold_remaining
+            self.hold_remaining = max(0.0, hold - elapsed)
+        seg.hold = hold
+        return True
 
 
 class Profile():
