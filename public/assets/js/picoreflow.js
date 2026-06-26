@@ -20,6 +20,7 @@ var segment_signature = "";
 var segments_armed = false;       // Edit button toggled on (graph clickable)
 var selected_segment = -1;        // the one segment currently unlocked to edit
 var segment_end_times = [];        // nominal end time (s) of each segment, for click mapping
+var graph_start_ms = null;        // wall-clock (ms) corresponding to runtime=0, for clock-time axis
 
 var protocol = 'ws:';
 if (window.location.protocol == 'https:') {
@@ -117,6 +118,28 @@ function formatDuration(seconds)
     return h > 0 ? (h + 'h ' + m + 'm') : (m + 'm');
 }
 
+// wall-clock time like "3:45 PM"
+function clockTime(date)
+{
+    return date.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'});
+}
+
+// countdown like "1:23:45" or "12:30"
+function hms(seconds)
+{
+    seconds = Math.max(0, parseInt(seconds) || 0);
+    var h = Math.floor(seconds / 3600);
+    var m = Math.floor((seconds % 3600) / 60);
+    var s = seconds % 60;
+    function p(n) { return (n < 10 ? '0' : '') + n; }
+    return h > 0 ? (h + ':' + p(m) + ':' + p(s)) : (m + ':' + p(s));
+}
+
+function setStateWord(word, cls)
+{
+    $('#state').removeClass('running holding waiting error').addClass(cls || '').html(word);
+}
+
 function populateAimSegments(id)
 {
     var profile = profiles[id];
@@ -162,19 +185,15 @@ function deleteProfile()
 }
 
 
+// drive the radial progress ring (circumference of r=52 is 2*pi*52)
 function updateProgress(percentage)
 {
-    if(state=="RUNNING")
-    {
-        if(percentage > 100) percentage = 100;
-        $('#progressBar').css('width', percentage+'%');
-        if(percentage>5) $('#progressBar').html(parseInt(percentage)+'%');
-    }
-    else
-    {
-        $('#progressBar').css('width', 0+'%');
-        $('#progressBar').html('');
-    }
+    var pct = percentage;
+    if (isNaN(pct) || pct < 0) pct = 0;
+    if (pct > 100) pct = 100;
+    var C = 326.726;
+    $('#progress_ring').css('stroke-dashoffset', C * (1 - pct / 100));
+    $('#progress_pct').html(Math.round(pct) + '%');
 }
 
 function updateProfileTable()
@@ -263,24 +282,36 @@ function hazardTemp(){
     }
 }
 
-function timeTickFormatter(val,axis)
+// x-axis as wall-clock time. graph_start_ms is the clock time at runtime=0
+// (set when a run starts); when idle we anchor at "now" so a preview reads
+// as if it started now.
+function timeTickFormatter(val, axis)
 {
-// hours
-if(axis.max>3600) {
-  //var hours = Math.floor(val / (3600));
-  //return hours;
-  return Math.floor(val/3600);
-  }
+    var base = graph_start_ms || Date.now();
+    var d = new Date(base + val * 1000);
+    return d.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'});
+}
 
-// minutes
-if(axis.max<=3600) {
-  return Math.floor(val/60);
-  }
-
-// seconds
-if(axis.max<=60) {
-  return val;
-  }
+// place x-axis ticks on clean clock boundaries (:00/:15/:30/:45, or whole
+// hours for longer firings) instead of arbitrary offsets from the start time
+function clockTickGenerator(axis)
+{
+    var base = graph_start_ms || Date.now();
+    var span = axis.max - axis.min;                 // seconds visible
+    var steps = [900, 1800, 3600, 7200, 10800, 21600, 43200, 86400]; // 15m..24h
+    var step = steps[steps.length - 1];
+    for (var i = 0; i < steps.length; i++) {
+        if (steps[i] >= span / 6) { step = steps[i]; break; }   // aim for ~6 ticks
+    }
+    var stepMs = step * 1000;
+    // first clock instant >= axis.min, aligned to the step (15-min granularity
+    // keeps :00/:15/:30/:45 alignment in any real timezone)
+    var firstMs = Math.ceil((base + axis.min * 1000) / stepMs) * stepMs;
+    var ticks = [];
+    for (var t = firstMs; t <= base + axis.max * 1000; t += stepMs) {
+        ticks.push((t - base) / 1000);              // back to runtime seconds
+    }
+    return ticks;
 }
 
 function runTask()
@@ -327,6 +358,33 @@ function abortTask()
 {
     var cmd = {"cmd": "STOP"};
     ws_control.send(JSON.stringify(cmd));
+}
+
+// generic confirmation modal: runs cb only if the user confirms
+var _confirm_cb = null;
+function confirmAction(title, body, okLabel, okClass, cb)
+{
+    $('#confirmModalTitle').text(title);
+    $('#confirmModalBody').text(body);
+    $('#confirmModalOk').text(okLabel)
+        .removeClass('btn-danger btn-warning btn-success btn-default')
+        .addClass(okClass);
+    _confirm_cb = cb;
+    $('#confirmModal').modal('show');
+}
+
+function confirmStop()
+{
+    confirmAction('Stop the firing?',
+        'This aborts the current firing immediately and the kiln stops heating. This cannot be undone.',
+        'Stop firing', 'btn-danger', abortTask);
+}
+
+function confirmAdvance()
+{
+    confirmAction('Skip to the next segment?',
+        'This ends the current segment now and starts the next one. This cannot be undone.',
+        'Advance', 'btn-warning', advanceSegment);
 }
 
 function toggleHold()
@@ -697,7 +755,7 @@ function getOptions()
       min: 0,
       tickColor: 'rgba(216, 211, 197, 0.2)',
       tickFormatter: timeTickFormatter,
-      tickSize: get_tick_size(),
+      ticks: clockTickGenerator,
       font:
       {
         size: 12,
@@ -932,16 +990,40 @@ $(document).ready(function()
                     $("#segment_table").show();
                     manageSegmentEditor(x);
 
+                    if (graph_start_ms === null) graph_start_ms = Date.now() - x.runtime * 1000;
                     graph.live.data.push([x.runtime, x.temperature]);
                     graph.plot = $.plot("#graph_container", [ graph.profile, graph.live ] , getOptions());
 
-                    left = parseInt(x.totaltime-x.runtime);
-                    eta = new Date(left * 1000).toISOString().substr(11, 8);
+                    setStateWord(manual_hold ? "HOLDING" : "RUNNING", manual_hold ? "holding" : "running");
+                    updateProgress(parseFloat(x.runtime) / parseFloat(x.totaltime) * 100);
 
-                    updateProgress(parseFloat(x.runtime)/parseFloat(x.totaltime)*100);
-                    $('#state').html('<span class="glyphicon glyphicon-time" style="font-size: 22px; font-weight: normal"></span>&nbsp;<span>' + eta + '</span>');
+                    // completion clock = run start + total (sim) duration. Anchored
+                    // to graph_start_ms (the wall-clock at runtime=0) so it reads as a
+                    // fixed wall-clock time and doesn't count down when the sim runs fast.
+                    $('#eta_complete').html('done ' + clockTime(new Date(graph_start_ms + x.totaltime * 1000)));
+
+                    // current segment, with both the ramp-reaches-temp ETA and
+                    // the hold-ends ETA as fixed clock times
+                    if (x.segments && x.segment !== null && x.segment < x.segments.length
+                        && x.segment_remaining !== null && x.segment_remaining !== undefined) {
+                        var seg = x.segments[x.segment];
+                        $('#seg_info').html('Seg ' + (x.segment + 1) + ' &middot; ' + Math.round(seg.target) + '&deg;' + temp_scale_display);
+                        // during a ramp, segment_remaining = (time to target) + full hold
+                        var rampRem = (x.phase === 'RAMP') ? Math.max(0, x.segment_remaining - seg.hold) : 0;
+                        var rampEta = clockTime(new Date(graph_start_ms + (x.runtime + rampRem) * 1000));
+                        var holdEta = clockTime(new Date(graph_start_ms + (x.runtime + x.segment_remaining) * 1000));
+                        var txt;
+                        if (x.phase === 'RAMP') {
+                            txt = 'eta ' + rampEta;
+                            if (seg.hold > 0) txt += ', hold until ' + holdEta;
+                        } else {
+                            // at temperature, soaking
+                            txt = (x.segment_remaining > 0.5) ? 'hold until ' + holdEta : 'complete';
+                        }
+                        $('#seg_eta').html(txt);
+                    } else { $('#seg_info').html(''); $('#seg_eta').html(''); }
+
                     $('#target_temp').html(parseInt(x.target));
-                    $('#cost').html(x.currency_type + parseFloat(x.cost).toFixed(2));
                   
 
 
@@ -955,10 +1037,12 @@ $(document).ready(function()
                     $("#nav_advance").hide();
                     $("#nav_clear").hide();
                     $("#segment_table").hide();
-                    var wleft = parseInt(x.wait_remaining || 0);
-                    var weta = new Date(wleft * 1000).toISOString().substr(11, 8);
+                    setStateWord("WAITING", "waiting");
                     updateProgress(0);
-                    $('#state').html('<span class="glyphicon glyphicon-time"></span>&nbsp;Starts in ' + weta);
+                    $('#progress_pct').html(hms(x.wait_remaining));
+                    $('#eta_complete').html('until start');
+                    $('#seg_info').html('');
+                    $('#seg_eta').html('');
                     $('#target_temp').html('---');
                 }
                 else
@@ -972,17 +1056,25 @@ $(document).ready(function()
                     segment_editor_count = -1;  // rebuild fresh on the next run
                     segments_armed = false;     // re-lock for the next run
                     selected_segment = -1;
-                    $('#state').html('<p class="ds-text">'+state+'</p>');
+                    graph_start_ms = null;      // idle preview anchors at "now"
+                    var isErr = (typeof state === 'string' && state.indexOf('ERROR') !== -1);
+                    setStateWord(state, isErr ? 'error' : '');
+                    updateProgress(0);
+                    $('#progress_pct').html('&mdash;');
+                    $('#eta_complete').html('');
+                    $('#seg_info').html('');
+                    $('#seg_eta').html('');
                 }
 
                 if (x.watcher_alarm) { $('#watcher_alarm').show(); } else { $('#watcher_alarm').hide(); }
 
                 $('#act_temp').html(parseInt(x.temperature));
-                $('#heat').html('<div class="bar" style="height:'+x.pidstats.out*70+'%;"></div>')
-                if (x.cool > 0.5) { $('#cool').addClass("ds-led-cool-active"); } else { $('#cool').removeClass("ds-led-cool-active"); }
-                if (x.air > 0.5) { $('#air').addClass("ds-led-air-active"); } else { $('#air').removeClass("ds-led-air-active"); }
-                if (x.temperature > hazardTemp()) { $('#hazard').addClass("ds-led-hazard-active"); } else { $('#hazard').removeClass("ds-led-hazard-active"); }
-                if ((x.door == "OPEN") || (x.door == "UNKNOWN")) { $('#door').addClass("ds-led-door-open"); } else { $('#door').removeClass("ds-led-door-open"); }
+                // heating indicator: glow the temp card + show the pill
+                if (x.heat > 0 || (x.pidstats && x.pidstats.out > 0.02)) {
+                    $('#heat').addClass('on'); $('#temp_card').addClass('heating');
+                } else {
+                    $('#heat').removeClass('on'); $('#temp_card').removeClass('heating');
+                }
 
                 state_last = state;
 
@@ -1119,6 +1211,14 @@ $(document).ready(function()
         $("#e2").on("change", function(e)
         {
             updateProfile(e.val);
+        });
+
+        // confirmation modal: run the stashed callback when OK is clicked
+        $("#confirmModalOk").on("click", function()
+        {
+            var cb = _confirm_cb;
+            _confirm_cb = null;
+            if (cb) cb();
         });
 
         // click a segment on the graph to unlock just that one for editing
