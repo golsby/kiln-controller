@@ -1,5 +1,6 @@
 import logging
 import os
+import loadenv  # loads .env into os.environ (no-op if .env is absent)
 
 # uncomment this if using MAX-31856
 #from lib.max31856 import MAX31856
@@ -8,12 +9,19 @@ import os
 #
 #   General options
 
+# DEBUG (development) vs production. Set KILN_DEBUG=true in a local,
+# gitignored .env file to run in development mode (simulated kiln,
+# unprivileged port, accelerated simulation). Production has no .env, so
+# DEBUG is False and the real-kiln defaults below apply.
+DEBUG = os.environ.get("KILN_DEBUG", "false").strip().lower() in ("1", "true", "yes", "on")
+
 ### Logging
 log_level = logging.INFO
 log_format = '%(asctime)s %(levelname)s %(name)s: %(message)s'
 
 ### Server
-listening_port = 80
+# port 80 needs root in production; use an unprivileged port in development
+listening_port = 8080 if DEBUG else 80
 listening_ip = "0.0.0.0"
 
 ########################################################################
@@ -91,7 +99,13 @@ stop_integral_windup = True
 ########################################################################
 #
 #   Simulation parameters
-simulate = False
+# simulate the kiln in development; drive the real hardware in production
+simulate = DEBUG
+# Speed up a simulated run by this factor so you don't watch it in real
+# time. 1 = real speed, 10 = ten times faster, etc. Only affects
+# simulations; the real kiln always runs at 1. Must be > 0. Override
+# locally with KILN_SIM_SPEEDUP in .env.
+sim_speedup = float(os.environ.get("KILN_SIM_SPEEDUP", "60" if DEBUG else "1"))
 sim_t_env      = 60.0   # deg C
 sim_c_heat     = 500.0  # J/K  heat capacity of heat element
 sim_c_oven     = 5000.0 # J/K  heat capacity of oven
@@ -120,10 +134,31 @@ time_scale_profile  = "m" # s = Seconds | m = Minutes | h = Hours - Enter and vi
 # this should not replace you watching your kiln or use of a kiln-sitter
 emergency_shutoff_temp = 2264 #cone 7
 
-# If the current temperature is outside the pid control window,
-# delay the schedule until it does back inside. This allows for heating
-# and cooling as fast as possible and not continuing until temp is reached.
-kiln_must_catch_up = True
+# Rate-paced control. The setpoint advances at each segment's programmed
+# rate but is never allowed to lead the actual kiln temperature by more
+# than this many degrees. If the kiln can't keep up, the ramp simply takes
+# longer (it never accelerates past the rate to catch up).
+rate_tracking_window = 10 # degrees
+
+# A hold/soak only counts down while the kiln is within this many degrees
+# of the segment target, so a hold is a true time-at-temperature.
+hold_tolerance = 5 # degrees
+
+# Arduino kiln watcher (independent over-temp safety). If it reports this
+# many consecutive errors during a firing, the controller tries to reset
+# it; if that doesn't recover it, it raises an alarm and keeps retrying but
+# does NOT stop the firing (the main thermocouple keeps controlling). A
+# genuine over-temp alarm from the watcher still aborts.
+watcher_error_threshold = 3
+# Safe max temp (deg C) used to initialize the watcher while idle, before a
+# profile sets the real ceiling.
+watcher_default_max_temp_c = 1340
+
+# PagerDuty alerting (optional). Put the Integration Key from a PagerDuty
+# service's "Events API V2" integration in PAGERDUTY_ROUTING_KEY in your
+# .env (per-machine, gitignored). Empty = PagerDuty disabled. Free plan
+# supports this and notifies the PagerDuty mobile app on your phone.
+pagerduty_routing_key = os.environ.get("PAGERDUTY_ROUTING_KEY", "")
 
 # This setting is required. 
 # This setting defines the window within which PID control occurs.
@@ -132,8 +167,7 @@ kiln_must_catch_up = True
 # or 100% off because the kiln is too hot. No integral builds up
 # outside the window. The bigger you make the window, the more
 # integral you will accumulate. This should be a positive integer.
-pid_control_window = 5 #degrees 
-kiln_catchup_window = 30 #degrees
+pid_control_window = 5 #degrees
 
 # thermocouple offset
 # If you put your thermocouple in ice water and it reads 36F, you can

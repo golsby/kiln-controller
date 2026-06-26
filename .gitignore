@@ -12,3 +12,4 @@ thumbs.db
 state.json
 graph*
 .DS_Store*
+.env

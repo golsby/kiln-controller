@@ -6,6 +6,10 @@ import logging
 import json
 import config
 import os
+import notifier
+
+from scripts.schedule_converter import (
+    rth_to_segments, time_temp_to_segments, segments_to_points)
 
 log = logging.getLogger(__name__)
 
@@ -240,22 +244,31 @@ class Oven(threading.Thread):
         self.temperature = 0
         self.time_step = config.sensor_time_wait
         self.time_log_interval = config.time_log_interval
+        # wall-clock acceleration factor; always 1 for a real kiln,
+        # overridden by SimulatedOven to speed up simulated runs
+        self.runtime_multiplier = 1
         self.reset()
 
     def reset(self):
         self.cost = 0
         self.state = "IDLE"
         self.profile = None
+        self.scheduler = None
         self.absolute_start_time = 0
         self.absolute_runtime = 0
         self.start_time = 0
         self.runtime = 0
+        self._last_runtime = 0
         self.totaltime = 0
         self.target = 0
         self.heat = 0
+        self.wait_until = None
         self.pid = PID(ki=config.pid_ki, kd=config.pid_kd, kp=config.pid_kp)
 
-    def run_profile(self, profile, startat=0):
+    def run_profile(self, profile, startat=0, wait_until=None):
+        '''Begin (or schedule) a profile. If wait_until (epoch seconds) is in
+        the future, the oven sits in WAITING (idle, no heat) until then, used
+        for an aimed start. Otherwise it begins immediately.'''
         self.reset()
 
         if self.board.temp_sensor.noConnection:
@@ -272,13 +285,31 @@ class Oven(threading.Thread):
             return
 
         self.startat = startat * 60
+        self.profile = profile
+        # nominal total duration; actual time can extend if the kiln lags
+        self.totaltime = profile.get_duration()
+
+        if wait_until is not None and wait_until > time.time():
+            self.wait_until = wait_until
+            self.state = "WAITING"
+            log.info("Scheduled %s to start in %d seconds"
+                     % (profile.name, int(wait_until - time.time())))
+        else:
+            self._begin_run()
+
+    def _begin_run(self):
+        '''Actually start the firing now (used immediately or when an aimed
+        start's wait elapses).'''
         self.runtime = self.startat
+        self._last_runtime = self.startat
+        self.wait_until = None
         self.absolute_start_time = datetime.datetime.now()
         self.start_time = datetime.datetime.now() - datetime.timedelta(seconds=self.startat)
-        self.profile = profile
-        self.totaltime = profile.get_duration()
+        self.scheduler = SegmentScheduler(self.profile.segments, self.profile.start_temp)
+        if self.startat > 0:
+            self.scheduler.fast_forward(self.startat)
         self.state = "RUNNING"
-        log.info("Running schedule %s starting at %d minutes" % (profile.name,startat))
+        log.info("Running schedule %s starting at %d minutes" % (self.profile.name, self.startat / 60))
         log.info("Starting")
 
     def abort_run(self):
@@ -288,21 +319,60 @@ class Oven(threading.Thread):
     def abort_run_with_error(self, err):
         self.abort_run()
         self.state = err
+        # alert the operator that a firing was aborted (temp too high, lost
+        # thermocouple, over-temp, etc.). Unique key so each abort notifies.
+        notifier.pagerduty_event("trigger", "kiln-abort-%d" % int(time.time()),
+                                 "Kiln firing aborted: %s" % err)
 
-    def kiln_must_catch_up(self):
-        '''shift the whole schedule forward in time by one time_step
-        to wait for the kiln to catch up'''
-        if config.kiln_must_catch_up == True:
-            temp = self.board.temp_sensor.temperature + \
-                config.thermocouple_offset
-            # kiln too cold, wait for it to heat up
-            if self.target - temp > config.kiln_catchup_window:
-                log.debug("kiln must catch up, too cold, shifting schedule")
-                self.start_time = datetime.datetime.now() - datetime.timedelta(milliseconds = self.runtime * 1000)
-            # kiln too hot, wait for it to cool down
-            if temp - self.target > config.kiln_catchup_window:
-                log.debug("kiln must catch up, too hot, shifting schedule")
-                self.start_time = datetime.datetime.now() - datetime.timedelta(milliseconds = self.runtime * 1000)
+    def set_manual_hold(self, value):
+        '''Pause (True) or resume (False) the schedule at the current
+        setpoint. No effect unless a profile is running.'''
+        if self.scheduler is None:
+            return
+        self.scheduler.manual_hold = bool(value)
+        log.info("manual hold %s" % ("engaged" if value else "released"))
+
+    def advance_segment(self):
+        '''Skip the rest of the current segment and start the next one.'''
+        if self.scheduler is None:
+            return
+        self.scheduler.skip_segment()
+        log.info("advanced to segment %d" % self.scheduler.index)
+
+    def set_segment_target(self, index, temp):
+        '''Adjust a segment's target temperature for the running firing
+        only (the saved profile is untouched).'''
+        if self.scheduler is None:
+            return False
+        try:
+            index = int(index)
+            temp = float(temp)
+        except (TypeError, ValueError):
+            return False
+        # safety: never let a runtime edit reach the emergency cutoff
+        if temp >= config.emergency_shutoff_temp:
+            log.error("refusing segment %d target %g (>= emergency_shutoff_temp %g)"
+                      % (index, temp, config.emergency_shutoff_temp))
+            return False
+        ok = self.scheduler.set_segment_target(index, temp)
+        if ok:
+            log.info("segment %d target set to %g at runtime" % (index, temp))
+        return ok
+
+    def set_segment_hold(self, index, hold):
+        '''Adjust a segment's hold/soak duration (seconds) for the running
+        firing only (the saved profile is untouched).'''
+        if self.scheduler is None:
+            return False
+        try:
+            index = int(index)
+            hold = float(hold)
+        except (TypeError, ValueError):
+            return False
+        ok = self.scheduler.set_segment_hold(index, hold)
+        if ok:
+            log.info("segment %d hold set to %g s at runtime" % (index, hold))
+        return ok
 
     def update_runtime(self):
         runtime_delta = datetime.datetime.now() - self.start_time
@@ -316,7 +386,21 @@ class Oven(threading.Thread):
         self.absolute_runtime = absolute_runtime_delta.total_seconds()
 
     def update_target_temp(self):
-        self.target = self.profile.get_target_temperature(self.runtime)
+        if self.scheduler is None:
+            self.target = 0
+            return
+        try:
+            actual = self.board.temp_sensor.temperature + config.thermocouple_offset
+        except AttributeError:
+            # temp sensor not ready yet at start-up; assume on-track
+            actual = self.scheduler.setpoint
+        dt = self.runtime - self._last_runtime
+        self._last_runtime = self.runtime
+        self.target = self.scheduler.advance(dt, actual)
+        # totaltime is dynamic: segments extend when the kiln lags, so the
+        # estimated finish keeps moving. runtime + remaining keeps the
+        # progress bar and ETA sensible (and never over 100%).
+        self.totaltime = self.runtime + self.scheduler.remaining_seconds()
 
     def reset_if_emergency(self):
         '''reset if the temperature is way TOO HOT, or other critical errors detected'''
@@ -342,7 +426,7 @@ class Oven(threading.Thread):
                 self.abort_run_with_error("ERROR: Too many thermocouple errors")
 
     def reset_if_schedule_ended(self):
-        if self.runtime > self.totaltime:
+        if self.scheduler is not None and self.scheduler.done:
             log.info("schedule ended, shutting down")
             log.info("total cost = %s%.2f" % (config.currency_type,self.cost))
             self.abort_run()
@@ -375,6 +459,15 @@ class Oven(threading.Thread):
             'currency_type': config.currency_type,
             'profile': self.profile.name if self.profile else None,
             'pidstats': self.pid.pidstats,
+            'segment': self.scheduler.index if self.scheduler else None,
+            'phase': self.scheduler.phase if self.scheduler else None,
+            'manual_hold': self.scheduler.manual_hold if self.scheduler else False,
+            'start_temp': self.scheduler.start_temp if self.scheduler else None,
+            'wait_remaining': max(0, self.wait_until - time.time()) if (self.state == "WAITING" and self.wait_until) else None,
+            'segments': [
+                {'target': s.target, 'rate': s.rate_per_hour, 'hold': s.hold}
+                for s in self.scheduler.segments
+            ] if self.scheduler else None,
         }
         return state
 
@@ -442,10 +535,16 @@ class Oven(threading.Thread):
                     self.automatic_restart()
                 time.sleep(1)
                 continue
+            if self.state == "WAITING":
+                # aimed start: sit idle (no heat) until the scheduled time
+                if self.wait_until is None or time.time() >= self.wait_until:
+                    self._begin_run()
+                else:
+                    time.sleep(1)
+                continue
             if self.state == "RUNNING":
                 self.update_cost()
                 self.save_automatic_restart_state()
-                self.kiln_must_catch_up()
                 self.update_runtime()
                 self.update_target_temp()
                 self.heat_then_cool()
@@ -470,9 +569,21 @@ class SimulatedOven(Oven):
 
         super().__init__()
 
+        # run the simulated clock faster than real time if configured
+        self.runtime_multiplier = getattr(config, 'sim_speedup', 1) or 1
+
         # start thread
         self.start()
-        log.debug("SimulatedOven started")
+        log.debug("SimulatedOven started at %dx speed" % self.runtime_multiplier)
+
+    def update_runtime(self):
+        # Simulated time advances deterministically, one time_step per
+        # control-loop iteration, in lockstep with the physics. This keeps
+        # the schedule and the simulated temperature perfectly aligned no
+        # matter how fast we play it back - runtime_multiplier only sets the
+        # real sleep between iterations, not the size of the simulated step.
+        self.runtime += self.time_step
+        self.absolute_runtime += self.time_step
 
     def heating_energy(self,pid):
         # using pid here simulates the element being on for
@@ -499,7 +610,8 @@ class SimulatedOven(Oven):
     def heat_then_cool(self):
         pid = self.pid.compute(self.target,
                                self.board.temp_sensor.temperature +
-                               config.thermocouple_offset)
+                               config.thermocouple_offset,
+                               self.time_step)
         heat_on = float(self.time_step * pid)
         heat_off = float(self.time_step * (1 - pid))
 
@@ -538,8 +650,9 @@ class SimulatedOven(Oven):
             pass
 
         # we don't actually spend time heating & cooling during
-        # a simulation, so sleep.
-        time.sleep(self.time_step)
+        # a simulation, so sleep. divide by the speedup factor so the
+        # run plays back faster than real time.
+        time.sleep(self.time_step / self.runtime_multiplier)
 
 
 class RealOven(Oven):
@@ -570,7 +683,8 @@ class RealOven(Oven):
         self.output.contactor(1)
         pid = self.pid.compute(self.target,
                                self.board.temp_sensor.temperature +
-                               config.thermocouple_offset)
+                               config.thermocouple_offset,
+                               self.time_step)
         heat_on = float(self.time_step * pid)
         heat_off = float(self.time_step * (1 - pid))
 
@@ -602,10 +716,227 @@ class RealOven(Oven):
         except KeyError:
             pass
 
+class SegmentScheduler():
+    '''Drives the setpoint through a list of Segments at their programmed
+    rates. The setpoint advances at each segment's rate but is never allowed
+    to lead the actual kiln temperature by more than rate_tracking_window, so
+    if the kiln cannot keep up the ramp simply takes longer - it never
+    accelerates to catch up. A hold counts down only while the kiln is within
+    hold_tolerance of the target, so a soak is a true time-at-temperature.'''
+
+    RAMP = "RAMP"
+    HOLD = "HOLD"
+    DONE = "DONE"
+
+    def __init__(self, segments, start_temp,
+                 rate_tracking_window=None, hold_tolerance=None):
+        self.segments = list(segments)
+        self.start_temp = float(start_temp)
+        self.setpoint = float(start_temp)
+        self.index = 0
+        self.hold_remaining = 0.0
+        self.phase = self.DONE
+        # manual hold: when True the schedule is paused at the current
+        # setpoint (no ramp progress, no soak countdown) until resumed
+        self.manual_hold = False
+        if rate_tracking_window is None:
+            rate_tracking_window = getattr(config, 'rate_tracking_window', 10)
+        if hold_tolerance is None:
+            hold_tolerance = getattr(config, 'hold_tolerance', 5)
+        self.rate_tracking_window = rate_tracking_window
+        self.hold_tolerance = hold_tolerance
+        self._init_segment()
+
+    def _init_segment(self):
+        if self.index >= len(self.segments):
+            self.phase = self.DONE
+            return
+        seg = self.segments[self.index]
+        self.hold_remaining = seg.hold
+        if abs(seg.target - self.setpoint) < 1e-9:
+            self.phase = self.HOLD
+        else:
+            self.phase = self.RAMP
+
+    @property
+    def done(self):
+        return self.phase == self.DONE
+
+    @property
+    def segment(self):
+        if 0 <= self.index < len(self.segments):
+            return self.segments[self.index]
+        return None
+
+    def advance(self, dt, actual_temp):
+        '''Advance the schedule by dt seconds given the current kiln temp,
+        and return the new setpoint.'''
+        # manual hold pauses all progress, holding the current setpoint
+        if self.done or self.manual_hold:
+            return self.setpoint
+        dt = max(0.0, float(dt))
+        seg = self.segments[self.index]
+
+        if self.phase == self.RAMP:
+            heating = seg.target >= self.setpoint
+            if seg.rate > 0:
+                desired = self.setpoint + (1 if heating else -1) * seg.rate * dt
+            else:
+                desired = seg.target  # zero-rate ramp is instantaneous
+            # don't overshoot the segment target
+            if heating:
+                desired = min(desired, seg.target)
+                # rate-tracking clamp: never lead actual temp by more than
+                # the window, and never move the setpoint backwards
+                desired = min(desired, actual_temp + self.rate_tracking_window)
+                desired = max(desired, self.setpoint)
+            else:
+                desired = max(desired, seg.target)
+                desired = max(desired, actual_temp - self.rate_tracking_window)
+                desired = min(desired, self.setpoint)
+            self.setpoint = desired
+            if abs(self.setpoint - seg.target) < 1e-6:
+                self.setpoint = seg.target
+                self.phase = self.HOLD
+                self.hold_remaining = seg.hold
+
+        elif self.phase == self.HOLD:
+            self.setpoint = seg.target
+            # only soak while actually at temperature
+            if abs(actual_temp - seg.target) <= self.hold_tolerance:
+                self.hold_remaining -= dt
+                if self.hold_remaining <= 0:
+                    self.index += 1
+                    self._init_segment()
+
+        return self.setpoint
+
+    def fast_forward(self, seconds):
+        '''Position the schedule `seconds` into a nominal run, assuming the
+        kiln stays exactly on the programmed rate. Used to skip ahead on
+        restart and (later) for aimed starts.'''
+        remaining = float(seconds)
+        while not self.done and remaining > 1e-9:
+            seg = self.segments[self.index]
+            if self.phase == self.RAMP:
+                if seg.rate > 0 and seg.target != self.setpoint:
+                    ramp_time = abs(seg.target - self.setpoint) / seg.rate
+                else:
+                    ramp_time = 0.0
+                if remaining >= ramp_time:
+                    remaining -= ramp_time
+                    self.setpoint = seg.target
+                    self.phase = self.HOLD
+                    self.hold_remaining = seg.hold
+                else:
+                    direction = 1 if seg.target > self.setpoint else -1
+                    self.setpoint += direction * seg.rate * remaining
+                    remaining = 0.0
+            else:  # HOLD
+                if remaining >= self.hold_remaining:
+                    remaining -= self.hold_remaining
+                    self.hold_remaining = 0.0
+                    self.index += 1
+                    self._init_segment()
+                else:
+                    self.hold_remaining -= remaining
+                    remaining = 0.0
+        return self.setpoint
+
+    def remaining_seconds(self):
+        '''Nominal time left assuming the kiln stays on-rate from the current
+        setpoint. This is an estimate - the actual time extends whenever the
+        kiln lags, so callers should treat it as a moving target.'''
+        if self.done:
+            return 0.0
+        seg = self.segments[self.index]
+        if self.phase == self.RAMP:
+            total = seg.hold
+            if seg.rate > 0:
+                total += abs(seg.target - self.setpoint) / seg.rate
+        else:  # HOLD
+            total = max(0.0, self.hold_remaining)
+        temp = seg.target
+        for s in self.segments[self.index + 1:]:
+            if s.rate > 0 and s.target != temp:
+                total += abs(s.target - temp) / s.rate
+            total += s.hold
+            temp = s.target
+        return total
+
+    def skip_segment(self):
+        '''Advance: drop the remainder of the current segment (ramp and
+        soak) and begin the next segment's ramp from the *current* setpoint
+        toward its target at its rate. Ends the schedule on the last
+        segment. Clears any manual hold.'''
+        self.manual_hold = False
+        if self.done:
+            return
+        self.index += 1
+        # _init_segment starts the next segment from the current setpoint,
+        # so there is no jump in the commanded temperature
+        self._init_segment()
+
+    def set_segment_target(self, index, temp):
+        '''Change a segment's target temperature at runtime. Editing a
+        future segment just updates the value. Editing the active segment
+        re-aims toward the new target at the segment's rate without jumping
+        the setpoint: mid-ramp it simply changes where the ramp is headed
+        (reversing direction if needed); during a hold it leaves the hold,
+        ramps to the new target, then serves the remaining soak time.
+        Returns True if applied. Does not touch the saved profile.'''
+        if index < 0 or index >= len(self.segments):
+            return False
+        if self.done or index < self.index:
+            return False  # already-finished segment, nothing to do
+        seg = self.segments[index]
+        seg.target = float(temp)
+        if index == self.index and self.phase == self.HOLD:
+            # preserve the remaining soak, then ramp to the new target first
+            seg.hold = max(0.0, self.hold_remaining)
+            if abs(seg.target - self.setpoint) < 1e-9:
+                self.phase = self.HOLD
+            else:
+                self.phase = self.RAMP
+        # if the active segment is mid-RAMP, advance() re-aims automatically;
+        # future segments take effect when reached
+        return True
+
+    def set_segment_hold(self, index, hold):
+        '''Change a segment's hold/soak duration (seconds) at runtime. For
+        the segment that is currently soaking, the value is treated as the
+        total soak, so the remaining time is adjusted for what has already
+        elapsed (and the soak ends immediately if it is already satisfied).
+        Returns True if applied. Does not touch the saved profile.'''
+        if index < 0 or index >= len(self.segments):
+            return False
+        if self.done or index < self.index:
+            return False
+        hold = max(0.0, float(hold))
+        seg = self.segments[index]
+        if index == self.index and self.phase == self.HOLD:
+            elapsed = seg.hold - self.hold_remaining
+            self.hold_remaining = max(0.0, hold - elapsed)
+        seg.hold = hold
+        return True
+
+
 class Profile():
     def __init__(self, obj):
         self.name = obj["name"]
-        self.data = sorted(obj["data"])
+        rth = obj.get("rth")
+        if rth:
+            # rate/temp/hold is the source of truth for these profiles;
+            # build the ideal curve from the segments so what is displayed
+            # matches what the controller will actually run
+            self.segments = rth_to_segments(rth)
+            stored = obj.get("data")
+            self.start_temp = stored[0][1] if stored else 100
+            self.data = segments_to_points(self.segments, self.start_temp)
+        else:
+            self.data = sorted(obj["data"])
+            self.start_temp = self.data[0][1] if self.data else 0
+            self.segments = time_temp_to_segments(self.data)
 
     def get_duration(self):
         return max([t for (t, x) in self.data])
@@ -627,6 +958,24 @@ class Profile():
     
     def get_max_temp(self):
         return max([x for (t, x) in self.data])
+
+    def nominal_time_to_segment(self, index, start_temp=None):
+        '''Nominal seconds from the start of the run until segment `index`'s
+        target temperature is first reached (end of its ramp), assuming the
+        kiln stays on-rate from start_temp (defaults to the profile's start
+        temp). Used to back-compute an aimed start time.'''
+        if start_temp is None:
+            start_temp = self.start_temp
+        t = 0.0
+        temp = float(start_temp)
+        for i, s in enumerate(self.segments):
+            if s.rate > 0 and s.target != temp:
+                t += abs(s.target - temp) / s.rate
+            if i == index:
+                return t
+            temp = s.target
+            t += s.hold
+        return t
 
     def get_target_temperature(self, time):
         if time > self.get_duration():
@@ -655,9 +1004,14 @@ class PID():
     # settled on -50 to 50 and then divide by 50 at the end. This results
     # in a larger PID control window and much more accurate control...
     # instead of what used to be binary on/off control.
-    def compute(self, setpoint, ispoint):
+    def compute(self, setpoint, ispoint, timeDelta=None):
         now = datetime.datetime.now()
-        timeDelta = (now - self.lastNow).total_seconds()
+        # Use the control timestep when provided so the integral and
+        # derivative terms are consistent regardless of how fast the loop
+        # actually runs in real time (e.g. an accelerated simulation).
+        # Falling back to wall-clock keeps the old behavior if not passed.
+        if timeDelta is None:
+            timeDelta = (now - self.lastNow).total_seconds()
 
         window_size = 100
 
