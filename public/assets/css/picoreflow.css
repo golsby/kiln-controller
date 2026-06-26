@@ -469,6 +469,25 @@ body {
 .btn-info    { background: var(--info); color: #fff; }
 .btn-success:hover, .btn-danger:hover, .btn-warning:hover, .btn-info:hover { filter: brightness(1.05); color:#fff; }
 
+/* ---- profile dropdown (native select, no select2) ---- */
+/* flex row: dropdown grows, edit/+ buttons stay pinned to its right */
+#profile_selector { background: transparent; padding: 0; display: flex; align-items: center; gap: 6px; }
+#profile_selector .btn { flex: 0 0 auto; margin-left: 0; vertical-align: middle; }
+#e2 {
+    -webkit-appearance: none; -moz-appearance: none; appearance: none;
+    flex: 1 1 auto; min-width: 0;
+    background-color: #fff;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    height: 38px;
+    padding: 0 34px 0 12px;
+    font-size: 15px; font-weight: 600; color: var(--ink);
+    max-width: 100%; vertical-align: middle;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%236b7280'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+}
+
 /* ---- graph ---- */
 .graph { height: 520px; }
 
@@ -480,6 +499,9 @@ body {
 }
 
 /* ---- segment editor ---- */
+/* let wide tables scroll horizontally instead of being clipped (overrides
+   the legacy .table-responsive overflow:hidden) */
+.table-responsive { overflow-x: auto; }
 #segment_table .table { background: transparent; }
 #segment_table tr.warning > td { background: rgba(255,149,0,.14); }
 #segment_table tr.info > td { background: rgba(10,132,255,.10); }
@@ -507,10 +529,16 @@ body {
     .ring-sub { font-size: 10px; }
     .status-state { font-size: 34px; }
     .graph { height: 360px; }
-    /* heading: stack the profile selector above the Clear/Save controls */
-    .panel-heading #profile_selector,
+    /* compact the segment editor so it fits (and scrolls if still too wide) */
+    #segment_table input.form-control { width: 68px !important; }
+    #segment_table .table > thead > tr > th,
+    #segment_table .table > tbody > tr > td { padding: 6px 8px; }
+    /* heading: stack the profile selector above the Clear/Save controls.
+       keep the selector a flex row so its edit/+ buttons stay to the right */
+    .panel-heading #profile_selector {
+        float: none !important; display: flex; margin: 0 0 8px 0;
+    }
     .panel-heading #btn_controls {
         float: none !important; display: block; margin: 0 0 8px 0; text-align: left;
     }
-    .select2-container { width: 100% !important; }
 }

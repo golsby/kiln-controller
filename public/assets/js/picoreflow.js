@@ -178,7 +178,7 @@ function deleteProfile()
     $('#btn_controls').show();
     $('#status').slideDown();
     $('#profile_table').slideUp();
-    $('#e2').select2('val', 0);
+    $('#e2').val(0);
     graph.profile.points.show = false;
     graph.profile.draggable = false;
     graph.plot = $.plot("#graph_container", [ graph.profile, graph.live ], getOptions());
@@ -289,7 +289,11 @@ function timeTickFormatter(val, axis)
 {
     var base = graph_start_ms || Date.now();
     var d = new Date(base + val * 1000);
-    return d.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'});
+    var h = d.getHours(), m = d.getMinutes();
+    var ampm = h < 12 ? 'AM' : 'PM';
+    var h12 = h % 12 || 12;
+    // omit ":00" on the hour to keep labels short on narrow screens
+    return (m === 0) ? (h12 + ' ' + ampm) : (h12 + ':' + (m < 10 ? '0' : '') + m + ' ' + ampm);
 }
 
 // place x-axis ticks on clean clock boundaries (:00/:15/:30/:45, or whole
@@ -299,9 +303,11 @@ function clockTickGenerator(axis)
     var base = graph_start_ms || Date.now();
     var span = axis.max - axis.min;                 // seconds visible
     var steps = [900, 1800, 3600, 7200, 10800, 21600, 43200, 86400]; // 15m..24h
+    // fewer ticks on a phone so the clock labels don't crowd/overlap
+    var want = (window.innerWidth && window.innerWidth < 720) ? 4 : 6;
     var step = steps[steps.length - 1];
     for (var i = 0; i < steps.length; i++) {
-        if (steps[i] >= span / 6) { step = steps[i]; break; }   // aim for ~6 ticks
+        if (steps[i] >= span / want) { step = steps[i]; break; }
     }
     var stepMs = step * 1000;
     // first clock instant >= axis.min, aligned to the step (15-min granularity
@@ -908,7 +914,7 @@ $(document).ready(function()
                     $.each(profiles,  function(i,v) {
                         if(v.name == x.profile.name) {
                             updateProfile(i);
-                            $('#e2').select2('val', i);
+                            $('#e2').val(i);
                         }
                     });
                 }
@@ -945,18 +951,10 @@ $(document).ready(function()
                             });
                         }
                         else {
+                            // normal completion or Stop: just reset the readouts,
+                            // no popup (only errors notify)
                             $('#target_temp').html('---');
                             updateProgress(0);
-                            $.bootstrapGrowl("<span class=\"glyphicon glyphicon-exclamation-sign\"></span> <b>Run completed</b>", {
-                            ele: 'body', // which element to append to
-                            type: 'success', // (null, 'info', 'error', 'success')
-                            offset: {from: 'top', amount: 250}, // 'top', or 'bottom'
-                            align: 'center', // ('left', 'right', or 'center')
-                            width: 385, // (integer, or 'auto')
-                            delay: 0,
-                            allow_dismiss: true,
-                            stackup_spacing: 10 // spacing between consecutively stacked growls.
-                            });
                         }
                     }
                 }
@@ -1193,24 +1191,18 @@ $(document).ready(function()
                 if (profile.name == selected_profile_name)
                 {
                     selected_profile = i;
-                    $('#e2').select2('val', i);
+                    $('#e2').val(i);
                     updateProfile(i);
                 }
             }
         };
 
 
-        $("#e2").select2(
+        // native <select> (no select2): on iOS it uses the native picker
+        // instead of popping the keyboard, and styles cleanly
+        $("#e2").on("change", function()
         {
-            placeholder: "Select Profile",
-            allowClear: true,
-            minimumResultsForSearch: -1
-        });
-
-
-        $("#e2").on("change", function(e)
-        {
-            updateProfile(e.val);
+            updateProfile($(this).val());
         });
 
         // confirmation modal: run the stashed callback when OK is clicked
