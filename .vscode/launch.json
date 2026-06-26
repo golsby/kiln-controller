@@ -1,0 +1,25 @@
+{
+    // Debug the kiln controller locally (simulator).
+    //   KILN_DEBUG=true   -> simulated kiln, served on port 8080
+    //   PURE_PYTHON=1     -> avoid this Mac venv's gevent/greenlet binary mismatch
+    //   GEVENT_SUPPORT    -> let the debugger hit breakpoints inside gevent greenlets
+    // KILN_SIM_SPEEDUP / PAGERDUTY_ROUTING_KEY are picked up from your .env.
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Kiln Controller (dev/sim)",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/kiln-controller.py",
+            "cwd": "${workspaceFolder}",
+            "python": "${workspaceFolder}/venv/bin/python",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "KILN_DEBUG": "true",
+                "PURE_PYTHON": "1",
+                "GEVENT_SUPPORT": "True"
+            }
+        }
+    ]
+}

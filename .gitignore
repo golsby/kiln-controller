@@ -8,7 +8,6 @@ thumbs.db
 #storage/profiles
 #config.py
 .idea/*
-.vscode/
 *.log
 state.json
 graph*
