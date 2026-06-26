@@ -463,6 +463,7 @@ class Oven(threading.Thread):
             'phase': self.scheduler.phase if self.scheduler else None,
             'manual_hold': self.scheduler.manual_hold if self.scheduler else False,
             'start_temp': self.scheduler.start_temp if self.scheduler else None,
+            'segment_remaining': self.scheduler.current_segment_remaining() if self.scheduler else None,
             'wait_remaining': max(0, self.wait_until - time.time()) if (self.state == "WAITING" and self.wait_until) else None,
             'segments': [
                 {'target': s.target, 'rate': s.rate_per_hour, 'hold': s.hold}
@@ -863,6 +864,20 @@ class SegmentScheduler():
             total += s.hold
             temp = s.target
         return total
+
+    def current_segment_remaining(self):
+        '''Nominal seconds until the current segment finishes (its ramp
+        reaches target, plus its remaining soak), assuming the kiln stays
+        on-rate. Estimate; extends if the kiln lags.'''
+        if self.done:
+            return 0.0
+        seg = self.segments[self.index]
+        if self.phase == self.RAMP:
+            t = 0.0
+            if seg.rate > 0 and seg.target != self.setpoint:
+                t = abs(seg.target - self.setpoint) / seg.rate
+            return t + seg.hold
+        return max(0.0, self.hold_remaining)
 
     def skip_segment(self):
         '''Advance: drop the remainder of the current segment (ramp and

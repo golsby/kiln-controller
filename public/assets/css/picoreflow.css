@@ -330,3 +330,187 @@ body {
     overflow-x: hidden;
     overflow-y: hidden;
 }
+
+/* ============================================================
+   Modern dashboard theme
+   ============================================================ */
+:root {
+    --bg: #eef1f5;
+    --card: #ffffff;
+    --ink: #11151c;
+    --muted: #6b7280;
+    --line: #e6e9ef;
+    --accent: #34c759;   /* progress green */
+    --heat: #ff6b35;     /* heating orange */
+    --danger: #ff3b30;
+    --warn: #ff9500;
+    --info: #0a84ff;
+    --shadow: 0 1px 3px rgba(16,24,40,.06), 0 8px 24px rgba(16,24,40,.06);
+}
+
+body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+}
+
+.container { padding-top: 18px; padding-bottom: 40px; }
+
+/* ---- dashboard ---- */
+#dashboard {
+    display: flex;
+    gap: 16px;
+    align-items: stretch;
+    flex-wrap: wrap;
+    margin-bottom: 16px;
+}
+
+.dash-card {
+    background: var(--card);
+    border-radius: 18px;
+    box-shadow: var(--shadow);
+    padding: 22px 26px;
+    flex: 1 1 240px;
+    position: relative;
+    min-height: 168px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+.dash-label {
+    font-size: 12px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-weight: 600;
+    margin-bottom: 6px;
+}
+
+/* temperature */
+.temp-card { gap: 2px; }
+.temp-value {
+    font-size: 84px;
+    line-height: 1;
+    font-weight: 600;
+    letter-spacing: -.02em;
+    color: var(--ink);
+}
+.temp-unit { font-size: 30px; font-weight: 500; color: var(--muted); margin-left: 4px; vertical-align: top; }
+.temp-target { margin-top: 8px; font-size: 17px; color: var(--muted); font-weight: 500; }
+.temp-target span { color: var(--ink); font-weight: 600; }
+
+.heat-pill {
+    position: absolute; top: 18px; right: 20px;
+    display: none;
+    align-items: center;
+    background: rgba(255,107,53,.12);
+    color: var(--heat);
+    font-size: 12px; font-weight: 700;
+    padding: 5px 10px; border-radius: 999px;
+    letter-spacing: .02em;
+}
+.heat-pill.on { display: inline-flex; }
+#temp_card.heating { box-shadow: var(--shadow), inset 0 0 0 2px rgba(255,107,53,.35); }
+
+/* progress ring */
+.ring-card { align-items: center; justify-content: center; flex: 0 1 280px; }
+.progress-ring { width: 168px; height: 168px; transform: rotate(-90deg); }
+.ring-track { fill: none; stroke: var(--line); stroke-width: 10; }
+.ring-fill {
+    fill: none; stroke: var(--accent); stroke-width: 10; stroke-linecap: round;
+    stroke-dasharray: 326.726; stroke-dashoffset: 326.726;
+    transition: stroke-dashoffset .6s ease;
+}
+.ring-center {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+    text-align: center;
+}
+.ring-pct { font-size: 38px; font-weight: 700; color: var(--ink); line-height: 1; }
+.ring-sub { font-size: 13px; color: var(--muted); margin-top: 4px; font-weight: 500; }
+
+/* status */
+.status-state { font-size: 40px; font-weight: 700; color: var(--ink); line-height: 1.05; }
+.status-state.running { color: var(--accent); }
+.status-state.holding { color: var(--warn); }
+.status-state.waiting { color: var(--info); }
+.status-state.error   { color: var(--danger); font-size: 26px; }
+.seg-line { margin-top: 14px; font-size: 18px; font-weight: 600; color: var(--ink); }
+.seg-eta { font-size: 14px; color: var(--muted); margin-top: 2px; }
+
+/* run-control buttons live in the status card */
+.status-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+.status-actions .btn { flex: 1 1 auto; padding: 10px 14px; }
+
+/* ---- panel / cards ---- */
+.panel-default {
+    border: none; border-radius: 18px; box-shadow: var(--shadow);
+    background: var(--card); margin-top: 0;
+}
+.panel-heading {
+    background: transparent; border-bottom: 1px solid var(--line);
+    padding: 14px 18px;
+}
+.panel-body { background: transparent; padding: 14px 18px; }
+.panel-footer { background: #fafbfc; border-top: 1px solid var(--line); }
+
+/* ---- buttons ---- */
+.btn {
+    border-radius: 10px; border: none; font-weight: 600;
+    padding: 8px 16px; box-shadow: none; transition: filter .15s ease, background .15s ease;
+}
+.btn:focus, .btn:active:focus { outline: none; }
+.btn-default { background: #eef1f5; color: var(--ink); }
+.btn-default:hover { background: #e3e7ee; color: var(--ink); }
+.btn-success { background: var(--accent); color: #fff; }
+.btn-danger  { background: var(--danger); color: #fff; }
+.btn-warning { background: var(--warn); color: #fff; }
+.btn-info    { background: var(--info); color: #fff; }
+.btn-success:hover, .btn-danger:hover, .btn-warning:hover, .btn-info:hover { filter: brightness(1.05); color:#fff; }
+
+/* ---- graph ---- */
+.graph { height: 520px; }
+
+/* ---- watcher alarm ---- */
+#watcher_alarm.alert-danger {
+    border: none; border-radius: 14px;
+    background: rgba(255,59,48,.1); color: #b3261e;
+    box-shadow: var(--shadow); padding: 14px 18px;
+}
+
+/* ---- segment editor ---- */
+#segment_table .table { background: transparent; }
+#segment_table tr.warning > td { background: rgba(255,149,0,.14); }
+#segment_table tr.info > td { background: rgba(10,132,255,.10); }
+#segment_table input.form-control { border-radius: 8px; }
+
+/* ---- modal ---- */
+.modal-content { background-image: none; background: var(--card); border-radius: 16px; border: none; }
+.modal-body { background: transparent; }
+
+@media (max-width: 720px) {
+    .container { padding-left: 10px; padding-right: 10px; }
+    #dashboard { gap: 12px; }
+    .dash-card { min-height: 0; min-width: 0; padding: 14px 16px; }
+    /* keep temperature + progress ring side by side on the top row;
+       the status card (with controls) spans full width below */
+    .temp-card   { flex: 3 1 0; }
+    .ring-card   { flex: 2 1 0; }
+    .status-card { flex: 1 1 100%; }
+    .temp-value { font-size: 46px; }
+    .temp-unit  { font-size: 18px; line-height: 1; }
+    .temp-target { font-size: 14px; }
+    .heat-pill { top: 12px; right: 12px; padding: 3px 8px; font-size: 10px; }
+    .progress-ring { width: 104px; height: 104px; }
+    .ring-pct { font-size: 24px; }
+    .ring-sub { font-size: 10px; }
+    .status-state { font-size: 34px; }
+    .graph { height: 360px; }
+    /* heading: stack the profile selector above the Clear/Save controls */
+    .panel-heading #profile_selector,
+    .panel-heading #btn_controls {
+        float: none !important; display: block; margin: 0 0 8px 0; text-align: left;
+    }
+    .select2-container { width: 100% !important; }
+}
