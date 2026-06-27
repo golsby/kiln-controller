@@ -201,7 +201,13 @@ def find_profile(wanted):
 @app.route('/kiln/:filename#.*#')
 def send_static(filename):
     log.debug("serving %s" % filename)
-    return bottle.static_file(filename, root=os.path.join(os.path.dirname(os.path.realpath(sys.argv[0])), "public"))
+    resp = bottle.static_file(filename, root=os.path.join(os.path.dirname(os.path.realpath(sys.argv[0])), "public"))
+    # Force browsers (especially phones) to revalidate on every load instead of
+    # serving a stale cached css/js. static_file already sends ETag/Last-Modified,
+    # so an unchanged file revalidates as a cheap 304; a deploy is picked up on
+    # the next normal reload with no hard-refresh needed.
+    resp.set_header("Cache-Control", "no-cache")
+    return resp
 
 
 def get_websocket_from_request():
