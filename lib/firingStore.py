@@ -338,3 +338,85 @@ def finalize_orphans(firings_dir, status=INTERRUPTED):
             log.info("marked orphaned firing %s as %s" % (rec["id"], status))
         except Exception as e:
             log.error("could not finalize orphan %s: %s" % (dirpath, e))
+
+
+# ---------------------------------------------------------------------------
+# read side (the /api/firings surface; later fronted by the cloud proxy)
+# ---------------------------------------------------------------------------
+
+def _read_ndjson(path):
+    '''Parse an NDJSON file into a list, skipping any malformed/partial lines
+    (the last line of a crashed firing may be truncated).'''
+    rows = []
+    try:
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    rows.append(json.loads(line))
+                except ValueError:
+                    continue
+    except OSError:
+        pass
+    return rows
+
+
+def _downsample(rows, maxpts):
+    '''Thin rows to about maxpts points, always keeping the last one so the end
+    of the firing is shown.'''
+    n = len(rows)
+    if not maxpts or n <= maxpts:
+        return rows
+    every = max(1, int(n / (maxpts - 1)))
+    out = rows[::every]
+    if out[-1] is not rows[-1]:
+        out.append(rows[-1])
+    return out
+
+
+def list_firings(firings_dir):
+    '''Lightweight summaries for the history list, newest first. Excludes the
+    per-firing time-series and the full profile curve (just its name) to keep
+    the listing cheap.'''
+    items = []
+    for _, _dirpath, rec in _iter_bundles(firings_dir):
+        meta = rec.get("metadata", {})
+        items.append({
+            "id": rec.get("id"),
+            "controller_id": rec.get("controller_id"),
+            "profile_name": (rec.get("profile") or {}).get("name"),
+            "summary": rec.get("summary", {}),
+            "title": meta.get("title", ""),
+            "tags": meta.get("tags", []),
+        })
+    return items
+
+
+def _bundle_dir(firings_dir, fid):
+    '''Resolve a firing id to its bundle dir, rejecting anything that isn't a
+    plain bundle name (path-traversal safety on the :id URL segment).'''
+    if not fid or os.path.basename(fid) != fid:
+        return None
+    dirpath = os.path.join(firings_dir, fid)
+    if os.path.isdir(dirpath) and os.path.isfile(os.path.join(dirpath, RECORD)):
+        return dirpath
+    return None
+
+
+def get_firing(firings_dir, fid, resolution=None):
+    '''Full record + events + (optionally downsampled) samples for one firing,
+    or None if the id is unknown/invalid. `resolution` caps the number of
+    sample points returned; None returns them all.'''
+    dirpath = _bundle_dir(firings_dir, fid)
+    if dirpath is None:
+        return None
+    rec = _read_record(dirpath)
+    if rec is None:
+        return None
+    samples = _read_ndjson(os.path.join(dirpath, SAMPLES))
+    rec["events"] = _read_ndjson(os.path.join(dirpath, EVENTS))
+    rec["sample_count"] = len(samples)
+    rec["samples"] = _downsample(samples, resolution)
+    return rec

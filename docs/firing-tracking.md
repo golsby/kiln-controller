@@ -244,8 +244,11 @@ AWS phase.
    actions emit at the oven chokepoints; lifecycle/transition/`power_interruption`/`resumed`
    emit from the watcher. Thread-safe writes. Verified for every event type in the simulator,
    including crash-resume (→ `power_interruption`+`resumed`) vs Stop-resume (→ `resumed` only).
-4. **Read API** ← *next.* `GET /api/firings` and `GET /api/firings/:id` (with downsampling).
-5. **History UI.** List + detail graph reusing `picoreflow.js`; event annotations.
+4. **Read API** — *done.* `GET /api/firings` (summaries, newest first) and
+   `GET /api/firings/:id` (full record + events + samples, `?resolution=N` downsamples and
+   always keeps the last point). Path-traversal-safe `:id`; unknown id → 404. Read helpers
+   live in `firingStore` (`list_firings`/`get_firing`).
+5. **History UI** ← *next.* List + detail graph reusing `picoreflow.js`; event annotations.
 6. **Metadata editing.** `PATCH` + UI panel; photo upload.
 7. **Backfill importer.** One-shot script from `process.log` + CSVs.
 

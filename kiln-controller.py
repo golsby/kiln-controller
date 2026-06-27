@@ -53,6 +53,7 @@ profile_path = config.kiln_profiles_directory
 from oven import SimulatedOven, RealOven, Profile
 from ovenWatcher import OvenWatcher
 import identity
+import firingStore
 
 # controller identity (GUID + human name); auto-created on first run
 controller = identity.load_or_create(config.controller_state_file)
@@ -79,6 +80,30 @@ def handle_api():
     if hasattr(oven,'pid'):
         if hasattr(oven.pid,'pidstats'):
             return json.dumps(oven.pid.pidstats)
+
+
+@app.get('/api/firings')
+def handle_list_firings():
+    '''Lightweight history listing (summaries only, newest first).'''
+    bottle.response.content_type = 'application/json'
+    return json.dumps(firingStore.list_firings(config.firings_directory))
+
+
+@app.get('/api/firings/<fid>')
+def handle_get_firing(fid):
+    '''Full record + events + samples for one firing. ?resolution=N caps the
+    number of sample points returned (for graphing); omit it for full data.'''
+    bottle.response.content_type = 'application/json'
+    resolution = bottle.request.query.get('resolution')
+    try:
+        resolution = int(resolution) if resolution else None
+    except ValueError:
+        resolution = None
+    data = firingStore.get_firing(config.firings_directory, fid, resolution)
+    if data is None:
+        bottle.response.status = 404
+        return json.dumps({"error": "firing not found"})
+    return json.dumps(data)
 
 
 @app.post('/api')
