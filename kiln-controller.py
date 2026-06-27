@@ -357,7 +357,7 @@ def run_and_watch(profile, startat=0, wait_until=None, resume_state=None):
     ovenWatcher.set_max_temp(max_temp)
 
     oven.run_profile(profile, startat=startat, wait_until=wait_until, resume_state=resume_state)
-    ovenWatcher.record(profile)
+    ovenWatcher.record(profile, resuming=resume_state is not None)
 
 
 def compute_aim_wait_until(profile, msgdict):

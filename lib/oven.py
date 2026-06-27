@@ -590,7 +590,8 @@ class Oven(threading.Thread):
         self.run_profile(profile,startat=startat)
         self.cost = d["cost"]
         time.sleep(1)
-        self.ovenwatcher.record(profile)
+        # an automatic restart continues an interrupted firing
+        self.ovenwatcher.record(profile, resuming=True)
 
     def set_ovenwatcher(self,watcher):
         log.info("ovenwatcher set in oven class")

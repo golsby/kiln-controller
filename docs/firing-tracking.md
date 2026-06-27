@@ -204,12 +204,16 @@ AWS phase.
 
 ## Implementation plan (phased)
 
-1. **Controller identity** ← *in progress.* `controller.json` load-or-create, expose via
-   `/config`, rename via `/api`, show name in dashboard header.
-2. **Capture core.** Bundle writer (`lib/firingStore.py`); wire `ovenWatcher` to stream
-   `samples.ndjson` + write/finalize `record.json`.
-3. **Event timeline.** Emit events from the control/scheduler/resume paths into
-   `events.ndjson`.
+1. **Controller identity** — *done.* `controller.json` load-or-create, exposed via
+   `/config`, rename via `/api`, name shown in the dashboard header.
+2. **Capture core** — *done.* Bundle writer (`lib/firingStore.py`); `ovenWatcher` streams
+   `samples.ndjson` and writes/finalizes `record.json` on the RUNNING edges. Resume (crash
+   or explicit Stop) continues the same bundle; a fresh start finalizes orphaned `running`
+   bundles as `interrupted`. `duration_s` is firing-clock time (excludes stopped gaps).
+   record.json summary is refreshed on segment change + finalize; between those, a crash
+   leaves a truthful `running` status and the full `samples.ndjson` (summary recomputable).
+3. **Event timeline** ← *next.* Emit events from the control/scheduler/resume paths into
+   `events.ndjson` (including `power_interruption`/`resumed` on a continued bundle).
 4. **Read API.** `GET /api/firings` and `GET /api/firings/:id` (with downsampling).
 5. **History UI.** List + detail graph reusing `picoreflow.js`; event annotations.
 6. **Metadata editing.** `PATCH` + UI panel; photo upload.

@@ -1,6 +1,8 @@
 import threading,logging,json,time,datetime
 import config
 import notifier
+import firingStore
+import identity
 from oven import Oven
 from arduinoWatcher import ArduinoWatcher, KilnWatcherError, OverTempAlarmError
 log = logging.getLogger(__name__)
@@ -30,6 +32,11 @@ class OvenWatcher(threading.Thread):
         self.started = None
         self.recording = False
         self.observers = []
+        # historical firing capture (see lib/firingStore.py)
+        self.controller_id = identity.load_or_create(config.controller_state_file)["id"]
+        self.firing = None              # open FiringRecorder while a run is captured
+        self._pending_snapshot = None   # profile snapshot awaiting the RUNNING edge
+        self._pending_resume = False    # next capture should continue an interrupted run
         threading.Thread.__init__(self)
         self.daemon = True
         self.oven = oven
@@ -123,8 +130,10 @@ class OvenWatcher(threading.Thread):
             # record state for any new clients that join
             if firing:
                 self.last_log.append(oven_state)
+                self._capture_sample(oven_state)
             else:
                 self.recording = False
+                self._finalize_capture(oven_state)
 
             self._poll_watcher(firing)
 
@@ -136,7 +145,56 @@ class OvenWatcher(threading.Thread):
             # but never faster than 10x/sec to avoid flooding the websocket.
             interval = self.oven.time_step / getattr(self.oven, 'runtime_multiplier', 1)
             time.sleep(max(interval, 0.1))
-   
+
+    def _capture_sample(self, state):
+        '''Open (or, on resume, continue) the firing bundle on the first
+        RUNNING sample, then append. Capture must never disturb the watcher
+        loop, so all errors are caught and logged.'''
+        try:
+            if self.firing is None and self._pending_snapshot is not None:
+                if self._pending_resume:
+                    # continue the interrupted run rather than forking a new one
+                    self.firing = firingStore.continue_resumable(
+                        config.firings_directory, self._pending_snapshot.get("name"))
+                if self.firing is None:
+                    # fresh start (or nothing left to continue): close out any
+                    # orphaned running bundle, then begin a new one
+                    if not self._pending_resume:
+                        firingStore.finalize_orphans(config.firings_directory)
+                    self.firing = firingStore.start_firing(
+                        config.firings_directory, self.controller_id,
+                        self._pending_snapshot, state)
+                self._pending_snapshot = None
+                self._pending_resume = False
+            if self.firing is not None:
+                self.firing.append_sample(state)
+        except Exception as e:
+            log.error("firing capture error: %s" % e)
+
+    def _finalize_capture(self, state):
+        '''Close out the active bundle when a firing leaves RUNNING.'''
+        if self.firing is None:
+            return
+        try:
+            self.firing.finalize(self._terminal_status(state))
+        except Exception as e:
+            log.error("could not finalize firing: %s" % e)
+        finally:
+            self.firing = None
+            self._pending_snapshot = None
+            self._pending_resume = False
+
+    def _terminal_status(self, state):
+        '''Infer how a firing ended from the oven's post-run state: an ERROR
+        state is an error; otherwise resume_info surviving means it was
+        stopped (resumable), and resume_info cleared means it completed.'''
+        s = state.get("state")
+        if isinstance(s, str) and s.startswith("ERROR"):
+            return firingStore.ERROR
+        if getattr(self.oven, "resume_info", None):
+            return firingStore.ABORTED
+        return firingStore.COMPLETED
+
     def _poll_watcher(self, firing):
         '''Read the watcher once and handle faults. Sensor/comm faults never
         abort the firing: below threshold they're tolerated; at threshold we
@@ -192,13 +250,21 @@ class OvenWatcher(threading.Thread):
         self.recording = False
         log.info("cleared recorded run log")
 
-    def record(self, profile):
+    def record(self, profile, resuming=False):
         self.last_profile = profile
         self.last_log = []
         self.started = datetime.datetime.now()
         self.recording = True
         #we just turned on, add first state for nice graph
         self.last_log.append(self.oven.get_state())
+        # stash a profile snapshot; the bundle is opened on the RUNNING edge so
+        # an aimed start (WAITING) doesn't create an empty record
+        self._pending_snapshot = {
+            "name": profile.name,
+            "type": "profile",
+            "data": profile.data,
+        }
+        self._pending_resume = resuming
 
     def add_observer(self,observer):
         if self.last_profile:

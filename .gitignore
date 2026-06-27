@@ -12,6 +12,7 @@ thumbs.db
 state.json
 resume.json
 controller.json
+storage/firings/
 graph*
 .DS_Store*
 .env
