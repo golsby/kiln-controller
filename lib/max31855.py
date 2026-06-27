@@ -28,7 +28,11 @@ class MAX31855(object):
         self.board = board
         self.noConnection = self.shortToGround = self.shortToVCC = self.unknownError = False
 
-        # Initialize needed GPIO
+        # Initialize needed GPIO. Boards sharing the clock/data pins across
+        # thermocouples re-configure the same channels, which RPi.GPIO warns
+        # about ("This channel is already in use") - that's expected here, so
+        # silence the warning to keep the startup log clean.
+        GPIO.setwarnings(False)
         GPIO.setmode(self.board)
         GPIO.setup(self.cs_pin, GPIO.OUT)
         GPIO.setup(self.clock_pin, GPIO.OUT)
