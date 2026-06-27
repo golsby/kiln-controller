@@ -28,6 +28,9 @@
 <body>
 
  <div class="container">
+  <div id="conn_banner" class="alert alert-warning" style="display:none; margin-bottom:10px">
+   <strong>&#9888; Disconnected from the controller</strong> &mdash; the live display is not updating. Trying to reconnect&hellip; (this clears automatically once the connection is restored).
+  </div>
   <div id="watcher_alarm" class="alert alert-danger" style="display:none; margin-bottom:10px">
    <strong>&#9888; Kiln watcher fault</strong> &mdash; the independent safety watcher is not responding. The firing is continuing on the main thermocouple and the controller is retrying a reset. Check the watcher thermocouple and wiring.
   </div>

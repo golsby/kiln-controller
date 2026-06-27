@@ -27,10 +27,8 @@ if (window.location.protocol == 'https:') {
     protocol = 'wss:';
 }
 var host = "" + protocol + "//" + window.location.hostname + ":" + window.location.port;
-var ws_status = new WebSocket(host+"/status");
-var ws_control = new WebSocket(host+"/control");
-var ws_config = new WebSocket(host+"/config");
-var ws_storage = new WebSocket(host+"/storage");
+// sockets are created (and re-created on disconnect) in document.ready
+var ws_status, ws_control, ws_config, ws_storage;
 
 
 if(window.webkitRequestAnimationFrame) window.requestAnimationFrame = window.webkitRequestAnimationFrame;
@@ -887,40 +885,60 @@ $(document).ready(function()
     else
     {
 
+        // Connection state / reconnect handling ////////////
+        //
+        // All four sockets drop together when the service restarts. Show a
+        // persistent "disconnected" banner (driven by the status socket, the
+        // live heartbeat) and keep recreating any closed socket every few
+        // seconds until the service comes back.
+
+        var _reconnect_timer = null;
+
+        function setConnected(connected)
+        {
+            if (connected) { $('#conn_banner').hide(); }
+            else           { $('#conn_banner').show(); }
+        }
+
+        function scheduleReconnect()
+        {
+            setConnected(false);
+            if (_reconnect_timer) { return; }   // a retry is already pending
+            _reconnect_timer = setTimeout(function()
+            {
+                _reconnect_timer = null;
+                // readyState: 0 CONNECTING, 1 OPEN, 2 CLOSING, 3 CLOSED
+                if (!ws_status  || ws_status.readyState  > 1) { setupStatusSocket();  }
+                if (!ws_config  || ws_config.readyState  > 1) { setupConfigSocket();  }
+                if (!ws_control || ws_control.readyState > 1) { setupControlSocket(); }
+                if (!ws_storage || ws_storage.readyState > 1) { setupStorageSocket(); }
+            }, 2000);
+        }
+
         // Status Socket ////////////////////////////////
 
-        ws_status.onopen = function()
+        function setupStatusSocket()
         {
-            console.log("Status Socket has been opened");
+            ws_status = new WebSocket(host + "/status");
 
-//            $.bootstrapGrowl("<span class=\"glyphicon glyphicon-exclamation-sign\"></span>Getting data from server",
-//            {
-//            ele: 'body', // which element to append to
-//            type: 'success', // (null, 'info', 'error', 'success')
-//            offset: {from: 'top', amount: 250}, // 'top', or 'bottom'
-//            align: 'center', // ('left', 'right', or 'center')
-//            width: 385, // (integer, or 'auto')
-//            delay: 2500,
-//            allow_dismiss: true,
-//            stackup_spacing: 10 // spacing between consecutively stacked growls.
-//            });
-        };
+            ws_status.onopen = function()
+            {
+                console.log("Status Socket has been opened");
+                setConnected(true);
+            };
 
-        ws_status.onclose = function()
-        {
-            $.bootstrapGrowl("<span class=\"glyphicon glyphicon-exclamation-sign\"></span> <b>ERROR 1:</b><br/>Status Websocket not available", {
-            ele: 'body', // which element to append to
-            type: 'error', // (null, 'info', 'error', 'success')
-            offset: {from: 'top', amount: 250}, // 'top', or 'bottom'
-            align: 'center', // ('left', 'right', or 'center')
-            width: 385, // (integer, or 'auto')
-            delay: 5000,
-            allow_dismiss: true,
-            stackup_spacing: 10 // spacing between consecutively stacked growls.
-          });
-        };
+            ws_status.onerror = function()
+            {
+                try { ws_status.close(); } catch (err) {}
+            };
 
-        ws_status.onmessage = function(e)
+            ws_status.onclose = function()
+            {
+                console.log("Status Socket closed - will retry");
+                scheduleReconnect();
+            };
+
+            ws_status.onmessage = function(e)
         {
             //console.log("received status data")
             //console.log(e.data);
@@ -1107,15 +1125,22 @@ $(document).ready(function()
 
             }
         };
+        }   // end setupStatusSocket
 
         // Config Socket /////////////////////////////////
 
-        ws_config.onopen = function()
+        function setupConfigSocket()
         {
-            ws_config.send('GET');
-        };
+            ws_config = new WebSocket(host + "/config");
 
-        ws_config.onmessage = function(e)
+            ws_config.onclose = function() { scheduleReconnect(); };
+
+            ws_config.onopen = function()
+            {
+                ws_config.send('GET');
+            };
+
+            ws_config.onmessage = function(e)
         {
             console.log (e.data);
             x = JSON.parse(e.data);
@@ -1144,15 +1169,22 @@ $(document).ready(function()
             }
 
         }
+        }   // end setupConfigSocket
 
         // Control Socket ////////////////////////////////
 
-        ws_control.onopen = function()
+        function setupControlSocket()
         {
+            ws_control = new WebSocket(host + "/control");
 
-        };
+            ws_control.onclose = function() { scheduleReconnect(); };
 
-        ws_control.onmessage = function(e)
+            ws_control.onopen = function()
+            {
+
+            };
+
+            ws_control.onmessage = function(e)
         {
             //Data from Simulation
             console.log ("control socket has been opened")
@@ -1162,16 +1194,22 @@ $(document).ready(function()
             graph.plot = $.plot("#graph_container", [ graph.profile, graph.live ] , getOptions());
 
         }
+        }   // end setupControlSocket
 
         // Storage Socket ///////////////////////////////
 
-        ws_storage.onopen = function()
+        function setupStorageSocket()
         {
-            ws_storage.send('GET');
-        };
+            ws_storage = new WebSocket(host + "/storage");
 
+            ws_storage.onclose = function() { scheduleReconnect(); };
 
-        ws_storage.onmessage = function(e)
+            ws_storage.onopen = function()
+            {
+                ws_storage.send('GET');
+            };
+
+            ws_storage.onmessage = function(e)
         {
             message = JSON.parse(e.data);
 
@@ -1225,6 +1263,15 @@ $(document).ready(function()
                 }
             }
         };
+        }   // end setupStorageSocket
+
+        // Open all four sockets now. Each recreates itself (via
+        // scheduleReconnect) if it drops, so a service restart is recovered
+        // automatically and the disconnected banner clears on reconnect.
+        setupStatusSocket();
+        setupConfigSocket();
+        setupControlSocket();
+        setupStorageSocket();
 
 
         // native <select> (no select2): on iOS it uses the native picker
