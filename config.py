@@ -218,6 +218,12 @@ automatic_restarts = False
 automatic_restart_window = 15 # max minutes since power outage
 automatic_restart_state_file = os.path.abspath(os.path.join(os.path.dirname( __file__ ),'state.json'))
 
+# Manual resume: a snapshot of the in-progress firing (profile, runtime,
+# cost) is written here continuously while running, so a stopped or failed
+# firing can be resumed from where it left off via the Start dialog. It is
+# kept on Stop/error and removed only on natural completion or Clear.
+resume_state_file = os.path.abspath(os.path.join(os.path.dirname( __file__ ),'resume.json'))
+
 ########################################################################
 # load kiln profiles from this directory
 # created a repo where anyone can contribute profiles. The objective is

@@ -106,6 +106,19 @@ def handle_api():
         log.debug("api stop command received")
         oven.abort_run()
 
+    # debug-only: force the simulated kiln's temperature (e.g. to test resume
+    # after the kiln has cooled). No effect on a real kiln.
+    if bottle.request.json['cmd'] == 'set_temp':
+        temp = bottle.request.json.get('temp')
+        if not hasattr(oven, 'set_simulated_temp'):
+            return { "success": False, "error": "set_temp only works on a simulated kiln" }
+        try:
+            oven.set_simulated_temp(float(temp))
+            log.info("api set_temp: simulated temperature set to %s" % temp)
+            return { "success": True, "temp": float(temp) }
+        except (TypeError, ValueError):
+            return { "success": False, "error": "invalid temp" }
+
     if bottle.request.json['cmd'] == 'memo':
         log.debug("api memo command received")
         memo = bottle.request.json['memo']
@@ -157,12 +170,29 @@ def handle_control():
                 msgdict = json.loads(message)
                 if msgdict.get("cmd") == "RUN":
                     log.info("RUN command received")
-                    profile_obj = msgdict.get('profile')
-                    if profile_obj:
-                        profile = Profile(profile_obj)
+                    if msgdict.get("resume"):
+                        # resume the last stopped/failed firing from where it left off
+                        info = oven.resume_info
+                        if not info:
+                            log.warning("resume requested but no firing to resume")
+                        else:
+                            try:
+                                filename = "%s.json" % info['profile']
+                                with open(os.path.join(profile_path, filename)) as f:
+                                    profile = Profile(json.load(f))
+                                log.info("resuming %s (segment %s, setpoint %s)"
+                                         % (info['profile'], info.get('segment'), info.get('setpoint')))
+                                # restore the exact scheduler position (not a time fast-forward)
+                                run_and_watch(profile, resume_state=info)
+                            except Exception as e:
+                                log.error("resume failed: %s" % e)
+                    else:
+                        profile_obj = msgdict.get('profile')
+                        if profile_obj:
+                            profile = Profile(profile_obj)
 
-                    wait_until = compute_aim_wait_until(profile, msgdict)
-                    run_and_watch(profile, wait_until=wait_until)
+                        wait_until = compute_aim_wait_until(profile, msgdict)
+                        run_and_watch(profile, wait_until=wait_until)
 
                 elif msgdict.get("cmd") == "SIMULATE":
                     log.info("SIMULATE command received")
@@ -200,6 +230,7 @@ def handle_control():
                         log.warning("ignoring CLEAR while a profile is running")
                     else:
                         ovenWatcher.clear()
+                        oven.clear_resume_state()
                 elif msgdict.get("cmd") == "RESET_WATCHER":
                     log.info("RESET_WATCHER command received")
                     ovenWatcher.arduinoWatcher.reset()
@@ -283,7 +314,7 @@ def handle_status():
     log.debug("websocket (status) closed")
 
 
-def run_and_watch(profile, startat=0, wait_until=None):
+def run_and_watch(profile, startat=0, wait_until=None, resume_state=None):
     # Set max kiln temp; kiln shuts down automatically if safety
     # thermocouple reaches this temperature
     max_temp = profile.get_max_temp()
@@ -296,7 +327,7 @@ def run_and_watch(profile, startat=0, wait_until=None):
     log.info("Kiln Watcher MAX set to {0}C".format(max_temp))
     ovenWatcher.set_max_temp(max_temp)
 
-    oven.run_profile(profile, startat=startat, wait_until=wait_until)
+    oven.run_profile(profile, startat=startat, wait_until=wait_until, resume_state=resume_state)
     ovenWatcher.record(profile)
 
 

@@ -129,12 +129,15 @@
      <h3 class="modal-title" id="jobSummaryModalLabel">Profile Preview</h3>
     </div>
     <div class="modal-body">
+     <div id="resume_row" class="checkbox" style="display:none; margin-bottom:10px">
+      <label><input type="checkbox" id="resume_enable" onclick="toggleResume()"> <span id="resume_label">Resume previous firing</span></label>
+     </div>
      <table class="table table-bordered">
       <tr><td>Selected Profile</td><td><b><span id="sel_prof"></span></b></td></tr>
       <tr><td>Estimated Runtime</td><td><b><span id="sel_prof_eta"></span></b></td></tr>
       <tr><td>Estimated Power consumption</td><td><b><span id="sel_prof_cost"></span></b></td></tr>
      </table>
-     <div class="checkbox" style="margin-top:10px">
+     <div id="aim_row" class="checkbox" style="margin-top:10px">
       <label><input type="checkbox" id="aim_enable" onclick="toggleAim()"> Aim for a temperature at a specific time</label>
      </div>
      <div id="aim_fields" style="display:none; padding-left:20px">

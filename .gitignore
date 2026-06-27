@@ -10,6 +10,7 @@ thumbs.db
 .idea/*
 *.log
 state.json
+resume.json
 graph*
 .DS_Store*
 .env

@@ -247,7 +247,11 @@ class Oven(threading.Thread):
         # wall-clock acceleration factor; always 1 for a real kiln,
         # overridden by SimulatedOven to speed up simulated runs
         self.runtime_multiplier = 1
+        # snapshot of a stopped/failed firing that can be resumed; survives
+        # reset() (so a Stop keeps it) and a process restart (loaded below)
+        self.resume_info = None
         self.reset()
+        self.load_resume_state()
 
     def reset(self):
         self.cost = 0
@@ -263,12 +267,15 @@ class Oven(threading.Thread):
         self.target = 0
         self.heat = 0
         self.wait_until = None
+        self.resume_state = None
         self.pid = PID(ki=config.pid_ki, kd=config.pid_kd, kp=config.pid_kp)
 
-    def run_profile(self, profile, startat=0, wait_until=None):
+    def run_profile(self, profile, startat=0, wait_until=None, resume_state=None):
         '''Begin (or schedule) a profile. If wait_until (epoch seconds) is in
         the future, the oven sits in WAITING (idle, no heat) until then, used
-        for an aimed start. Otherwise it begins immediately.'''
+        for an aimed start. resume_state (a saved snapshot) resumes a stopped
+        firing by restoring the scheduler's exact position. Otherwise it
+        begins immediately.'''
         self.reset()
 
         if self.board.temp_sensor.noConnection:
@@ -286,6 +293,7 @@ class Oven(threading.Thread):
 
         self.startat = startat * 60
         self.profile = profile
+        self.resume_state = resume_state
         # nominal total duration; actual time can extend if the kiln lags
         self.totaltime = profile.get_duration()
 
@@ -298,18 +306,30 @@ class Oven(threading.Thread):
             self._begin_run()
 
     def _begin_run(self):
-        '''Actually start the firing now (used immediately or when an aimed
-        start's wait elapses).'''
-        self.runtime = self.startat
-        self._last_runtime = self.startat
+        '''Actually start the firing now (used immediately, when an aimed
+        start's wait elapses, or to resume a stopped firing).'''
+        rs = self.resume_state
+        # where the firing's clock should pick up
+        start_runtime = float(rs['runtime']) if (rs and 'runtime' in rs) else self.startat
+        self.runtime = start_runtime
+        self._last_runtime = start_runtime
         self.wait_until = None
         self.absolute_start_time = datetime.datetime.now()
-        self.start_time = datetime.datetime.now() - datetime.timedelta(seconds=self.startat)
+        self.start_time = datetime.datetime.now() - datetime.timedelta(seconds=start_runtime)
         self.scheduler = SegmentScheduler(self.profile.segments, self.profile.start_temp)
-        if self.startat > 0:
+        if rs:
+            # resume: restore the scheduler's exact stopped position (segment,
+            # phase, setpoint, remaining hold) rather than fast-forwarding by
+            # elapsed time, which would overshoot if the kiln had lagged
+            self.scheduler.restore(rs)
+            self.cost = rs.get('cost', 0)
+            log.info("Resuming %s at segment %d, setpoint %.0f"
+                     % (self.profile.name, self.scheduler.index, self.scheduler.setpoint))
+        elif self.startat > 0:
             self.scheduler.fast_forward(self.startat)
+        self.resume_state = None
         self.state = "RUNNING"
-        log.info("Running schedule %s starting at %d minutes" % (self.profile.name, self.startat / 60))
+        log.info("Running schedule %s starting at %d minutes" % (self.profile.name, start_runtime / 60))
         log.info("Starting")
 
     def abort_run(self):
@@ -430,6 +450,8 @@ class Oven(threading.Thread):
             log.info("schedule ended, shutting down")
             log.info("total cost = %s%.2f" % (config.currency_type,self.cost))
             self.abort_run()
+            # natural completion: nothing to resume
+            self.clear_resume_state()
 
     def update_cost(self):
         if self.heat:
@@ -465,6 +487,9 @@ class Oven(threading.Thread):
             'start_temp': self.scheduler.start_temp if self.scheduler else None,
             'segment_remaining': self.scheduler.current_segment_remaining() if self.scheduler else None,
             'wait_remaining': max(0, self.wait_until - time.time()) if (self.state == "WAITING" and self.wait_until) else None,
+            'resume_available': bool(self.resume_info),
+            'resume_profile': self.resume_info.get('profile') if self.resume_info else None,
+            'resume_runtime': self.resume_info.get('runtime') if self.resume_info else None,
             'segments': [
                 {'target': s.target, 'rate': s.rate_per_hour, 'hold': s.hold}
                 for s in self.scheduler.segments
@@ -475,6 +500,48 @@ class Oven(threading.Thread):
     def save_state(self):
         with open(config.automatic_restart_state_file, 'w', encoding='utf-8') as f:
             json.dump(self.get_state(), f, ensure_ascii=False, indent=4)
+
+    def save_resume_state(self):
+        '''Continuously snapshot the running firing so it can be resumed
+        later. Always on (independent of automatic_restarts).'''
+        if not self.profile or not self.scheduler:
+            return
+        self.resume_info = {
+            'profile': self.profile.name,
+            'runtime': self.runtime,
+            'cost': self.cost,
+            # exact scheduler position so resume restores it rather than
+            # fast-forwarding by elapsed time (which overshoots if it lagged)
+            'segment': self.scheduler.index,
+            'phase': self.scheduler.phase,
+            'setpoint': self.scheduler.setpoint,
+            'hold_remaining': self.scheduler.hold_remaining,
+        }
+        try:
+            with open(config.resume_state_file, 'w', encoding='utf-8') as f:
+                json.dump(self.resume_info, f)
+        except Exception as e:
+            log.error("could not save resume state: %s" % e)
+
+    def clear_resume_state(self):
+        '''Forget the resumable firing (on natural completion or Clear).'''
+        self.resume_info = None
+        try:
+            if os.path.isfile(config.resume_state_file):
+                os.remove(config.resume_state_file)
+        except Exception as e:
+            log.error("could not clear resume state: %s" % e)
+
+    def load_resume_state(self):
+        '''Load a resumable firing left over from before a restart.'''
+        try:
+            if os.path.isfile(config.resume_state_file):
+                with open(config.resume_state_file) as f:
+                    d = json.load(f)
+                if d and d.get('profile'):
+                    self.resume_info = d
+        except Exception as e:
+            log.error("could not load resume state: %s" % e)
 
     def state_file_is_old(self):
         '''returns True is state files is older than 15 mins default
@@ -546,6 +613,7 @@ class Oven(threading.Thread):
             if self.state == "RUNNING":
                 self.update_cost()
                 self.save_automatic_restart_state()
+                self.save_resume_state()
                 self.update_runtime()
                 self.update_target_temp()
                 self.heat_then_cool()
@@ -585,6 +653,16 @@ class SimulatedOven(Oven):
         # real sleep between iterations, not the size of the simulated step.
         self.runtime += self.time_step
         self.absolute_runtime += self.time_step
+
+    def set_simulated_temp(self, temp):
+        '''Debug/testing only: force the simulated kiln temperature. Sets the
+        physics state (oven + element) so it persists, e.g. to knock the temp
+        down after a Stop and test resuming a cooled kiln.'''
+        self.t = temp        # oven body temperature (drives the sensor)
+        self.t_h = temp      # heating element temperature
+        self.temperature = temp
+        self.board.temp_sensor.temperature = temp
+        log.info("simulated temperature forced to %g" % temp)
 
     def heating_energy(self,pid):
         # using pid here simulates the element being on for
@@ -864,6 +942,19 @@ class SegmentScheduler():
             total += s.hold
             temp = s.target
         return total
+
+    def restore(self, snap):
+        '''Restore the scheduler to a previously-saved position (for resuming
+        a stopped firing) instead of recomputing it from elapsed time.'''
+        if not self.segments:
+            self.phase = self.DONE
+            return
+        idx = int(snap.get('segment', 0))
+        self.index = max(0, min(idx, len(self.segments) - 1))
+        self.setpoint = float(snap.get('setpoint', self.start_temp))
+        self.hold_remaining = float(snap.get('hold_remaining', self.segments[self.index].hold))
+        ph = snap.get('phase')
+        self.phase = ph if ph in (self.RAMP, self.HOLD, self.DONE) else self.RAMP
 
     def current_segment_remaining(self):
         '''Nominal seconds until the current segment finishes (its ramp

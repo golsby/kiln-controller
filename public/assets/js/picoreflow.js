@@ -322,6 +322,14 @@ function clockTickGenerator(axis)
 
 function runTask()
 {
+    // resume the previous firing: keep the existing red trace and let the
+    // server pick up where it stopped (profile + runtime come from the
+    // server's resume snapshot, so the dropdown selection is ignored)
+    if ($('#resume_enable').is(':checked')) {
+        ws_control.send(JSON.stringify({"cmd": "RUN", "resume": true}));
+        return;
+    }
+
     var cmd =
     {
         "cmd": "RUN",
@@ -342,6 +350,18 @@ function runTask()
 
     ws_control.send(JSON.stringify(cmd));
 
+}
+
+function toggleResume()
+{
+    // resuming uses the previous firing as-is, so hide the aim options
+    if ($('#resume_enable').is(':checked')) {
+        $('#aim_enable').prop('checked', false);
+        $('#aim_fields').hide();
+        $('#aim_row').hide();
+    } else {
+        $('#aim_row').show();
+    }
 }
 
 function runTaskSimulation()
@@ -1065,6 +1085,15 @@ $(document).ready(function()
                 }
 
                 if (x.watcher_alarm) { $('#watcher_alarm').show(); } else { $('#watcher_alarm').hide(); }
+
+                // offer resume of a stopped/failed firing on the Start dialog
+                if (x.resume_available) {
+                    $('#resume_row').show();
+                    $('#resume_label').text('Resume previous firing — ' + x.resume_profile + ' at ' + hms(x.resume_runtime));
+                } else {
+                    $('#resume_row').hide();
+                    $('#resume_enable').prop('checked', false);
+                }
 
                 $('#act_temp').html(parseInt(x.temperature));
                 // heating indicator: glow the temp card + show the pill
