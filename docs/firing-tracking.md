@@ -127,12 +127,13 @@ survives. Only the fields needed to graph the firing and to reconstruct an ideal
 from it are persisted:
 
 ```json
-{"runtime": 350.0, "temperature": 146.86, "target": 147.6, "state": "RUNNING", "heat": 1.0, "totaltime": 7800.0}
+{"runtime": 350.0, "temperature": 146.86, "target": 147.6, "heat": 1.0, "totaltime": 7800.0}
 ```
 
 Everything constant or derived — profile name, `cost`, `kwh_rate`, `currency_type`, the
 upcoming-`segments` array, `pidstats`, `resume_*` — lives once in `record.json` rather than
-being duplicated on every line. Values are lightly rounded (temps to 0.01°, below
+being duplicated on every line. `state` is omitted too: samples are only captured while the
+oven is `RUNNING`, so run-state changes are recorded as discrete events in `events.ndjson`. Values are lightly rounded (temps to 0.01°, below
 thermocouple resolution) to drop precision-noise. This keeps a long firing's log small.
 
 Note this is a deliberate split from the live feed: the `/status` websocket still carries

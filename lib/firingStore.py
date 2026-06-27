@@ -35,7 +35,10 @@ SAMPLES = "samples.ndjson"
 # the full get_state(); everything constant or derived - profile name, cost,
 # kwh_rate, currency, the upcoming-segments array, pidstats, resume_* - lives
 # once in record.json instead of being duplicated on every line.
-SAMPLE_FIELDS = ("runtime", "temperature", "target", "state", "heat", "totaltime")
+# (state is omitted: samples are only captured while the oven is RUNNING, so it
+# would be a constant "RUNNING" on every line. Run-state changes are recorded as
+# discrete events in events.ndjson instead.)
+SAMPLE_FIELDS = ("runtime", "temperature", "target", "heat", "totaltime")
 
 # per-field rounding to drop sensor/control precision-noise that bloats lines
 # but adds nothing to a graph (thermocouple resolution is ~0.25 deg)
