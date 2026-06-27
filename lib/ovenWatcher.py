@@ -47,6 +47,16 @@ class OvenWatcher(threading.Thread):
         self._watcher_initialized = False
         self.start()
 
+    def _firing(self):
+        '''True when a firing is active. The watcher is only safety-critical
+        during a firing; while idle the Arduino is often unpowered, so its
+        I/O faults (e.g. [Errno 121] Remote I/O error) are expected and not
+        worth logging as errors.'''
+        try:
+            return self.oven.get_state().get("state") == "RUNNING"
+        except Exception:
+            return False
+
     def set_max_temp(self, degreesC):
         '''Remember and push the watcher's max temp so we can re-send it
         when recovering the watcher after a fault.'''
@@ -54,7 +64,10 @@ class OvenWatcher(threading.Thread):
         try:
             self.arduinoWatcher.setMaxTemp(degreesC)
         except Exception as e:
-            log.error("could not set watcher max temp: %s" % e)
+            if self._firing():
+                log.error("could not set watcher max temp: %s" % e)
+            else:
+                log.debug("could not set watcher max temp (idle): %s" % e)
 
     def reset_watcher(self):
         '''Attempt to recover a faulted Arduino watcher: reset it and re-send
@@ -65,7 +78,13 @@ class OvenWatcher(threading.Thread):
             self.arduinoWatcher.setMaxTemp(self.watcher_max_temp)
             log.info("attempted kiln watcher reset")
         except Exception as e:
-            log.error("kiln watcher reset failed: %s" % e)
+            # An unreachable watcher at startup/idle is expected (unpowered
+            # Arduino -> [Errno 121]); keep it quiet. During a firing a failed
+            # reset is a real problem, so log it loudly.
+            if self._firing():
+                log.error("kiln watcher reset failed: %s" % e)
+            else:
+                log.debug("kiln watcher reset skipped (idle, watcher unreachable): %s" % e)
 
     def send_alert(self, message):
         '''Surface a high-priority alert: log it and raise a PagerDuty
