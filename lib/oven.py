@@ -611,14 +611,23 @@ class Oven(threading.Thread):
                     time.sleep(1)
                 continue
             if self.state == "RUNNING":
-                self.update_cost()
-                self.save_automatic_restart_state()
-                self.save_resume_state()
-                self.update_runtime()
-                self.update_target_temp()
-                self.heat_then_cool()
-                self.reset_if_emergency()
-                self.reset_if_schedule_ended()
+                # Never let a transient exception kill the control thread - if
+                # it dies, Start/Resume silently do nothing until a restart and
+                # (worse) the over-temp checks below stop running. Log and keep
+                # looping; a real problem (e.g. Stop racing this iteration) is
+                # resolved on the next pass when state is no longer RUNNING.
+                try:
+                    self.update_cost()
+                    self.save_automatic_restart_state()
+                    self.save_resume_state()
+                    self.update_runtime()
+                    self.update_target_temp()
+                    self.heat_then_cool()
+                    self.reset_if_emergency()
+                    self.reset_if_schedule_ended()
+                except Exception:
+                    log.exception("error in control loop iteration; continuing")
+                    time.sleep(self.time_step)
 
 class SimulatedOven(Oven):
 
@@ -725,7 +734,9 @@ class SimulatedOven(Oven):
                     self.absolute_runtime,
                     self.totaltime,
                     time_left))
-        except KeyError:
+        except Exception:
+            # the periodic log line is best-effort; never let it (e.g. a
+            # reset() racing Stop) disrupt the control loop
             pass
 
         # we don't actually spend time heating & cooling during
@@ -792,7 +803,9 @@ class RealOven(Oven):
                     self.absolute_runtime,
                     self.totaltime,
                     time_left))
-        except KeyError:
+        except Exception:
+            # the periodic log line is best-effort; never let it (e.g. a
+            # reset() racing Stop) disrupt the control loop
             pass
 
 class SegmentScheduler():
