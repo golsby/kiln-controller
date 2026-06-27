@@ -30,6 +30,31 @@ SCHEMA_VERSION = 1
 RECORD = "record.json"
 SAMPLES = "samples.ndjson"
 
+# Only the fields needed to graph a firing (and reconstruct an idealized curve
+# from it) are persisted per sample. The live /status websocket still carries
+# the full get_state(); everything constant or derived - profile name, cost,
+# kwh_rate, currency, the upcoming-segments array, pidstats, resume_* - lives
+# once in record.json instead of being duplicated on every line.
+SAMPLE_FIELDS = ("runtime", "temperature", "target", "state", "heat", "totaltime")
+
+# per-field rounding to drop sensor/control precision-noise that bloats lines
+# but adds nothing to a graph (thermocouple resolution is ~0.25 deg)
+_SAMPLE_ROUND = {"runtime": 1, "temperature": 2, "target": 2, "heat": 3, "totaltime": 1}
+
+
+def _project_sample(state):
+    '''Reduce a full oven state to the slim set persisted per line.'''
+    line = {}
+    for k in SAMPLE_FIELDS:
+        if k not in state:
+            continue
+        v = state[k]
+        nd = _SAMPLE_ROUND.get(k)
+        if nd is not None and isinstance(v, (int, float)):
+            v = round(v, nd)
+        line[k] = v
+    return line
+
 # terminal statuses
 RUNNING = "running"
 COMPLETED = "completed"
@@ -97,8 +122,9 @@ class FiringRecorder(object):
         return self.record["id"]
 
     def append_sample(self, state):
-        '''Append one state dict and fold it into the running summary.'''
-        self._samples.write(json.dumps(state, ensure_ascii=False) + "\n")
+        '''Persist a slim per-sample line, but fold the full state into the
+        summary (so cost/segment counts/etc. are kept once in record.json).'''
+        self._samples.write(json.dumps(_project_sample(state), ensure_ascii=False) + "\n")
         self._samples.flush()
 
         s = self.record["summary"]

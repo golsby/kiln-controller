@@ -121,12 +121,24 @@ Design choices:
 
 ### `samples.ndjson` — the actual firing log
 
-One `oven.get_state()` dict per line, appended as `ovenWatcher` produces it (the data
-that already streams to `/status`). NDJSON because it is append-only and crash-safe: if
-the Pi loses power mid-firing, the record up to that instant survives. Full resolution
-(includes `pidstats`) — a 10-hour firing at 2s cadence is a few MB, trivial on the SD
-card, and full PID data is valuable for tuning. The UI downsamples for display via a
-`?resolution=` query param.
+One slim line per sample, appended as `ovenWatcher` produces it. NDJSON because it is
+append-only and crash-safe: if the Pi loses power mid-firing, the record up to that instant
+survives. Only the fields needed to graph the firing and to reconstruct an idealized curve
+from it are persisted:
+
+```json
+{"runtime": 350.0, "temperature": 146.86, "target": 147.6, "state": "RUNNING", "heat": 1.0, "totaltime": 7800.0}
+```
+
+Everything constant or derived — profile name, `cost`, `kwh_rate`, `currency_type`, the
+upcoming-`segments` array, `pidstats`, `resume_*` — lives once in `record.json` rather than
+being duplicated on every line. Values are lightly rounded (temps to 0.01°, below
+thermocouple resolution) to drop precision-noise. This keeps a long firing's log small.
+
+Note this is a deliberate split from the live feed: the `/status` websocket still carries
+the **full** `get_state()` (the live dashboard needs `segments`, `pidstats` for the tuning
+view, etc.); only the persisted file is slimmed. The UI downsamples stored samples for
+display via a `?resolution=` query param.
 
 ### `events.ndjson` — what actually happened
 
