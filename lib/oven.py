@@ -7,6 +7,7 @@ import json
 import config
 import os
 import notifier
+import firingStore
 
 from scripts.schedule_converter import (
     rth_to_segments, time_temp_to_segments, segments_to_points)
@@ -344,20 +345,35 @@ class Oven(threading.Thread):
         notifier.pagerduty_event("trigger", "kiln-abort-%d" % int(time.time()),
                                  "Kiln firing aborted: %s" % err)
 
+    def _emit_event(self, etype, detail=None):
+        '''Record a user-action event on the firing currently being captured
+        (no-op if the watcher isn't wired up yet or nothing is firing).'''
+        w = getattr(self, "ovenwatcher", None)
+        if w is not None:
+            w.log_event(etype, detail)
+
     def set_manual_hold(self, value):
         '''Pause (True) or resume (False) the schedule at the current
         setpoint. No effect unless a profile is running.'''
         if self.scheduler is None:
             return
-        self.scheduler.manual_hold = bool(value)
+        value = bool(value)
+        if self.scheduler.manual_hold == value:
+            return
+        self.scheduler.manual_hold = value
         log.info("manual hold %s" % ("engaged" if value else "released"))
+        self._emit_event(firingStore.EV_HOLD if value else firingStore.EV_HOLD_RELEASE,
+                         {"setpoint": self.scheduler.setpoint})
 
     def advance_segment(self):
         '''Skip the rest of the current segment and start the next one.'''
         if self.scheduler is None:
             return
+        from_idx = self.scheduler.index
         self.scheduler.skip_segment()
         log.info("advanced to segment %d" % self.scheduler.index)
+        self._emit_event(firingStore.EV_ADVANCE,
+                         {"from_segment": from_idx, "to_segment": self.scheduler.index})
 
     def set_segment_target(self, index, temp):
         '''Adjust a segment's target temperature for the running firing
@@ -374,9 +390,14 @@ class Oven(threading.Thread):
             log.error("refusing segment %d target %g (>= emergency_shutoff_temp %g)"
                       % (index, temp, config.emergency_shutoff_temp))
             return False
+        old = None
+        if 0 <= index < len(self.scheduler.segments):
+            old = self.scheduler.segments[index].target
         ok = self.scheduler.set_segment_target(index, temp)
         if ok:
             log.info("segment %d target set to %g at runtime" % (index, temp))
+            self._emit_event(firingStore.EV_SEGMENT_TARGET_EDIT,
+                             {"segment": index, "old": old, "new": temp})
         return ok
 
     def set_segment_hold(self, index, hold):
@@ -389,9 +410,14 @@ class Oven(threading.Thread):
             hold = float(hold)
         except (TypeError, ValueError):
             return False
+        old = None
+        if 0 <= index < len(self.scheduler.segments):
+            old = self.scheduler.segments[index].hold
         ok = self.scheduler.set_segment_hold(index, hold)
         if ok:
             log.info("segment %d hold set to %g s at runtime" % (index, hold))
+            self._emit_event(firingStore.EV_SEGMENT_HOLD_EDIT,
+                             {"segment": index, "old": old, "new": hold})
         return ok
 
     def update_runtime(self):

@@ -21,6 +21,7 @@ import json
 import uuid
 import logging
 import datetime
+import threading
 
 log = logging.getLogger(__name__)
 
@@ -29,6 +30,22 @@ SCHEMA_VERSION = 1
 # bundle file names
 RECORD = "record.json"
 SAMPLES = "samples.ndjson"
+EVENTS = "events.ndjson"
+
+# event types written to events.ndjson (the firing's narrative). Imported by
+# ovenWatcher and oven so the vocabulary lives in one place.
+EV_STARTED = "started"
+EV_COMPLETED = "completed"
+EV_ABORTED = "aborted"
+EV_ERROR = "error"
+EV_HOLD = "hold"                       # manual hold engaged
+EV_HOLD_RELEASE = "hold_release"       # manual hold released
+EV_ADVANCE = "advance"                 # user skipped to the next segment
+EV_SEGMENT_TARGET_EDIT = "segment_target_edit"
+EV_SEGMENT_HOLD_EDIT = "segment_hold_edit"
+EV_SEGMENT_TRANSITION = "segment_transition"   # ramp<->hold / next segment
+EV_POWER_INTERRUPTION = "power_interruption"   # run was interrupted (crash/outage)
+EV_RESUMED = "resumed"                 # capture continued an interrupted run
 
 # Only the fields needed to graph a firing (and reconstruct an idealized curve
 # from it) are persisted per sample. The live /status websocket still carries
@@ -114,15 +131,43 @@ class FiringRecorder(object):
         self.dirpath = dirpath
         self.record = record
         self._samples = open(os.path.join(dirpath, SAMPLES), "a", encoding="utf-8")
+        self._events = open(os.path.join(dirpath, EVENTS), "a", encoding="utf-8")
+        # events are written from both the watcher thread and the control
+        # greenlet (via oven methods), so guard the events file + closed flag
+        self._event_lock = threading.Lock()
+        self._closed = False
         # remember segment so we only rewrite record.json on real progress
         self._last_segment = record["summary"].get("segment")
         # firing-clock seconds of the last sample; this is the meaningful
         # duration (it doesn't advance while a run is stopped), unlike wall time
         self._last_runtime = record["summary"].get("duration_s") or 0
+        # set by continue_resumable to the status the bundle had before resume
+        # (running = crash/outage, aborted = deliberate stop) so the watcher can
+        # emit the right power_interruption/resumed events
+        self.resumed_from = None
 
     @property
     def id(self):
         return self.record["id"]
+
+    @property
+    def last_runtime(self):
+        return self._last_runtime
+
+    def append_event(self, etype, runtime=None, detail=None):
+        '''Append one discrete event to the firing's narrative. Thread-safe and
+        a no-op once the bundle is finalized.'''
+        evt = {"ts": _iso(_utcnow()), "type": etype}
+        if isinstance(runtime, (int, float)):
+            evt["runtime"] = round(runtime, 1)
+        if detail:
+            evt["detail"] = detail
+        with self._event_lock:
+            if self._closed:
+                return
+            self._events.write(json.dumps(evt, ensure_ascii=False) + "\n")
+            self._events.flush()
+        log.info("firing %s event: %s %s" % (self.id, etype, detail or ""))
 
     def append_sample(self, state):
         '''Persist a slim per-sample line, but fold the full state into the
@@ -172,10 +217,13 @@ class FiringRecorder(object):
         _atomic_write_json(os.path.join(self.dirpath, RECORD), self.record)
 
     def close(self):
-        try:
-            self._samples.close()
-        except Exception:
-            pass
+        with self._event_lock:
+            self._closed = True
+            for f in (self._samples, self._events):
+                try:
+                    f.close()
+                except Exception:
+                    pass
 
 
 def _ensure_dir(firings_dir):
@@ -265,11 +313,13 @@ def continue_resumable(firings_dir, profile_name=None):
             continue
         if profile_name is not None and rec.get("profile", {}).get("name") != profile_name:
             continue
+        prior_status = rec["summary"].get("status")
         rec["summary"]["status"] = RUNNING
         rec["summary"]["ended_at"] = None
         recorder = FiringRecorder(dirpath, rec)
+        recorder.resumed_from = prior_status
         recorder._flush_record()
-        log.info("continuing firing bundle %s on resume" % rec["id"])
+        log.info("continuing firing bundle %s on resume (was %s)" % (rec["id"], prior_status))
         return recorder
     return None
 

@@ -143,23 +143,38 @@ display via a `?resolution=` query param.
 
 ### `events.ndjson` — what actually happened
 
-A low-volume stream of discrete events, each `{ ts, runtime, type, detail }`, appended
-live. These turn a temperature curve into a *narrative*. Sources already exist as distinct
-actions in the code; we emit a record when each fires:
+A low-volume stream of discrete events, each `{ts, type, runtime, detail}`, appended live.
+These turn a temperature curve into a *narrative*. Example line:
 
-| Event type | Origin in current code |
-|---|---|
-| `started` / `completed` / `aborted` / `error` | `oven.run()` terminal states |
-| `hold` / `resume_hold` | `/control` HOLD, `manual_hold` flag |
-| `advance` | `/control` ADVANCE |
-| `segment_target_edit` / `segment_hold_edit` | `SET_SEGMENT_TARGET` / `SET_SEGMENT_HOLD` (capture old→new) |
-| `segment_transition` | `SegmentScheduler` phase change (RAMP→HOLD, seg N→N+1) |
-| `power_interruption` + `resumed` | inferred on startup when `resume.json`/`state.json` exists; record outage window + temp sag |
+```json
+{"ts": "2026-06-27T21:02:04Z", "type": "segment_target_edit", "runtime": 638.0, "detail": {"segment": 2, "old": 1826.0, "new": 900.0}}
+```
 
-The `power_interruption`/`resumed` pair is high-value: when the controller restarts
-mid-firing and resumes, we stamp the outage window and the temperature it sagged to, then
-**keep appending to the same firing record** rather than spawning a new one. The graph then
-shows a visible gap exactly where reality diverged from the plan.
+The event types (vocabulary lives in `firingStore.EV_*`) and where each is emitted:
+
+| Event type | Emitted by | When |
+|---|---|---|
+| `started` | watcher | a fresh bundle opens on the first RUNNING sample |
+| `completed` / `aborted` / `error` | watcher | the run leaves RUNNING (terminal status inferred from oven state) |
+| `hold` / `hold_release` | `oven.set_manual_hold` | manual hold engaged / released (detail: `setpoint`) |
+| `advance` | `oven.advance_segment` | user skipped to the next segment (detail: `from_segment`, `to_segment`) |
+| `segment_target_edit` / `segment_hold_edit` | `oven.set_segment_target` / `set_segment_hold` | runtime edit (detail: `segment`, `old`, `new`) |
+| `segment_transition` | watcher | segment/phase changed between samples (RAMP↔HOLD, seg N→N+1) |
+| `power_interruption` + `resumed` | watcher | capture continued an interrupted run |
+
+Two emission sites: **user-action** events fire at the oven method chokepoints (so any
+caller — `/control` or `/api` — is covered), while **lifecycle/derived** events fire from the
+watcher loop. Because events are written from both the watcher thread and the gevent control
+greenlet, `events.ndjson` writes are guarded by a lock + closed-flag in `FiringRecorder`.
+
+A manual `advance` is followed by a `segment_transition` for the boundary it caused — both
+are kept (the advance records *why*, the transition records the actual phase context).
+
+The `power_interruption`/`resumed` pair is the high-value case. A power loss/crash leaves the
+bundle `running` (never finalized); a deliberate Stop leaves it `aborted`. On resume the
+watcher continues the **same** bundle and emits `resumed` (with `from_status`), preceded by
+`power_interruption` only when the bundle was `running` (a genuine interruption, not a
+deliberate stop). The graph then shows the gap exactly where reality diverged from the plan.
 
 ## Capture mechanism
 
@@ -225,9 +240,11 @@ AWS phase.
    bundles as `interrupted`. `duration_s` is firing-clock time (excludes stopped gaps).
    record.json summary is refreshed on segment change + finalize; between those, a crash
    leaves a truthful `running` status and the full `samples.ndjson` (summary recomputable).
-3. **Event timeline** ← *next.* Emit events from the control/scheduler/resume paths into
-   `events.ndjson` (including `power_interruption`/`resumed` on a continued bundle).
-4. **Read API.** `GET /api/firings` and `GET /api/firings/:id` (with downsampling).
+3. **Event timeline** — *done.* `events.ndjson` with the event vocabulary above. User
+   actions emit at the oven chokepoints; lifecycle/transition/`power_interruption`/`resumed`
+   emit from the watcher. Thread-safe writes. Verified for every event type in the simulator,
+   including crash-resume (→ `power_interruption`+`resumed`) vs Stop-resume (→ `resumed` only).
+4. **Read API** ← *next.* `GET /api/firings` and `GET /api/firings/:id` (with downsampling).
 5. **History UI.** List + detail graph reusing `picoreflow.js`; event annotations.
 6. **Metadata editing.** `PATCH` + UI panel; photo upload.
 7. **Backfill importer.** One-shot script from `process.log` + CSVs.

@@ -37,6 +37,8 @@ class OvenWatcher(threading.Thread):
         self.firing = None              # open FiringRecorder while a run is captured
         self._pending_snapshot = None   # profile snapshot awaiting the RUNNING edge
         self._pending_resume = False    # next capture should continue an interrupted run
+        self._prev_seg = None           # last seen segment/phase, for transition events
+        self._prev_phase = None
         threading.Thread.__init__(self)
         self.daemon = True
         self.oven = oven
@@ -148,41 +150,91 @@ class OvenWatcher(threading.Thread):
 
     def _capture_sample(self, state):
         '''Open (or, on resume, continue) the firing bundle on the first
-        RUNNING sample, then append. Capture must never disturb the watcher
-        loop, so all errors are caught and logged.'''
+        RUNNING sample, then append the sample and any segment-transition
+        event. Capture must never disturb the watcher loop, so all errors are
+        caught and logged.'''
         try:
             if self.firing is None and self._pending_snapshot is not None:
-                if self._pending_resume:
-                    # continue the interrupted run rather than forking a new one
-                    self.firing = firingStore.continue_resumable(
-                        config.firings_directory, self._pending_snapshot.get("name"))
-                if self.firing is None:
-                    # fresh start (or nothing left to continue): close out any
-                    # orphaned running bundle, then begin a new one
-                    if not self._pending_resume:
-                        firingStore.finalize_orphans(config.firings_directory)
-                    self.firing = firingStore.start_firing(
-                        config.firings_directory, self.controller_id,
-                        self._pending_snapshot, state)
-                self._pending_snapshot = None
-                self._pending_resume = False
+                self._open_or_continue(state)
             if self.firing is not None:
                 self.firing.append_sample(state)
+                self._detect_transition(state)
         except Exception as e:
             log.error("firing capture error: %s" % e)
 
+    def _open_or_continue(self, state):
+        '''Begin a fresh bundle or continue an interrupted one, emitting the
+        matching started / power_interruption+resumed events.'''
+        if self._pending_resume:
+            # continue the interrupted run rather than forking a new one
+            self.firing = firingStore.continue_resumable(
+                config.firings_directory, self._pending_snapshot.get("name"))
+        if self.firing is None:
+            # fresh start (or nothing left to continue): close out any orphaned
+            # running bundle, then begin a new one
+            if not self._pending_resume:
+                firingStore.finalize_orphans(config.firings_directory)
+            self.firing = firingStore.start_firing(
+                config.firings_directory, self.controller_id,
+                self._pending_snapshot, state)
+            self.firing.append_event(firingStore.EV_STARTED, state.get("runtime"),
+                {"profile": self._pending_snapshot.get("name"),
+                 "segment_count": len(state["segments"]) if state.get("segments") else None})
+        else:
+            # a power loss/crash leaves the bundle "running"; a deliberate Stop
+            # leaves it "aborted". Mark the gap, then the resume.
+            if self.firing.resumed_from == firingStore.RUNNING:
+                self.firing.append_event(firingStore.EV_POWER_INTERRUPTION, state.get("runtime"))
+            self.firing.append_event(firingStore.EV_RESUMED, state.get("runtime"),
+                {"segment": state.get("segment"), "from_status": self.firing.resumed_from})
+        # seed transition tracking so the first (re)started sample doesn't emit
+        # a spurious segment_transition
+        self._prev_seg = state.get("segment")
+        self._prev_phase = state.get("phase")
+        self._pending_snapshot = None
+        self._pending_resume = False
+
+    def _detect_transition(self, state):
+        '''Emit a segment_transition when the run moves between segments or
+        between ramp and hold.'''
+        seg = state.get("segment")
+        phase = state.get("phase")
+        if seg != self._prev_seg or phase != self._prev_phase:
+            self.firing.append_event(firingStore.EV_SEGMENT_TRANSITION, state.get("runtime"),
+                {"segment": seg, "phase": phase,
+                 "from_segment": self._prev_seg, "from_phase": self._prev_phase})
+            self._prev_seg = seg
+            self._prev_phase = phase
+
     def _finalize_capture(self, state):
-        '''Close out the active bundle when a firing leaves RUNNING.'''
+        '''Close out the active bundle when a firing leaves RUNNING, emitting
+        the terminal event first (while the events file is still open).'''
         if self.firing is None:
             return
+        status = self._terminal_status(state)
         try:
-            self.firing.finalize(self._terminal_status(state))
+            self.firing.append_event(status, self.firing.last_runtime)
+            self.firing.finalize(status)
         except Exception as e:
             log.error("could not finalize firing: %s" % e)
         finally:
             self.firing = None
             self._pending_snapshot = None
             self._pending_resume = False
+
+    def log_event(self, etype, detail=None, runtime=None):
+        '''Record a user-action event (hold, advance, segment edit) on the
+        active firing. Called by oven control methods; a no-op when no firing
+        is being captured.'''
+        rec = self.firing
+        if rec is None:
+            return
+        if runtime is None:
+            runtime = getattr(self.oven, "runtime", None)
+        try:
+            rec.append_event(etype, runtime, detail)
+        except Exception as e:
+            log.error("could not log event %s: %s" % (etype, e))
 
     def _terminal_status(self, state):
         '''Infer how a firing ended from the oven's post-run state: an ERROR
