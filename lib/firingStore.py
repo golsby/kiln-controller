@@ -271,6 +271,57 @@ def start_firing(firings_dir, controller_id, profile_snapshot, initial_state):
     return recorder
 
 
+def import_firing(firings_dir, controller_id, profile_snapshot, samples, events,
+                  status, started_dt, ended_dt):
+    '''Write a complete historical firing bundle in one shot (backfill from an
+    old log). `samples`/`events` are lists already in the persisted shape;
+    summary stats are computed from the samples. Marks the record `imported` so
+    the UI can show that its status/metadata were reconstructed, not captured
+    live. Returns the bundle id.'''
+    _ensure_dir(firings_dir)
+    fid = _id_from(started_dt)
+    dirpath = os.path.join(firings_dir, fid)
+    suffix = 1
+    while os.path.exists(dirpath):
+        dirpath = os.path.join(firings_dir, "%s-%d" % (fid, suffix))
+        suffix += 1
+    os.makedirs(dirpath)
+    os.makedirs(os.path.join(dirpath, "photos"))
+
+    temps = [s["temperature"] for s in samples if isinstance(s.get("temperature"), (int, float))]
+    targets = [s["target"] for s in samples if isinstance(s.get("target"), (int, float))]
+    runtimes = [s["runtime"] for s in samples if isinstance(s.get("runtime"), (int, float))]
+    record = {
+        "id": os.path.basename(dirpath),
+        "controller_id": controller_id,
+        "schema_version": SCHEMA_VERSION,
+        "imported": True,
+        "summary": {
+            "status": status,
+            "started_at": _iso(started_dt),
+            "ended_at": _iso(ended_dt) if ended_dt else None,
+            "duration_s": int(max(runtimes)) if runtimes else None,
+            "max_temp": max(temps) if temps else None,
+            "peak_target": max(targets) if targets else None,
+            "total_cost": None,
+            "currency_type": None,
+            "segment_count": None,
+            "segment": None,
+        },
+        "profile": profile_snapshot,
+        "metadata": _empty_metadata(),
+    }
+    _atomic_write_json(os.path.join(dirpath, RECORD), record)
+    with open(os.path.join(dirpath, SAMPLES), "w", encoding="utf-8") as f:
+        for s in samples:
+            f.write(json.dumps(s, ensure_ascii=False) + "\n")
+    with open(os.path.join(dirpath, EVENTS), "w", encoding="utf-8") as f:
+        for e in events:
+            f.write(json.dumps(e, ensure_ascii=False) + "\n")
+    log.info("imported firing %s (%d samples, status %s)" % (record["id"], len(samples), status))
+    return record["id"]
+
+
 def _read_record(dirpath):
     try:
         with open(os.path.join(dirpath, RECORD), encoding="utf-8") as f:

@@ -218,11 +218,31 @@ This surface is exactly what the future AWS proxy fronts unchanged.
 
 ## Migration / backfill
 
-A one-shot importer reconstructs past firings from `process.log` (the
-`process_log_to_csv.py` logic already extracts per-firing curves) plus the existing
-combined CSVs, writing them into the bundle layout: status `completed`, sparse samples, no
-events (old logs don't carry them), empty metadata for the user to fill in. History launches
-non-empty.
+`scripts/import_firings.py` reconstructs past firings from a pre-tracking `process.log`. The
+old log's per-sample lines are rich (`temp/target/heat_on/heat_off/run_time/total_time`), so
+backfilled firings carry real curves — not sparse points. The importer:
+
+- splits the log into run-segments, dropping noise (0-sample false starts, thermocouple
+  `Refusing to start`, service-restart fragments with no data);
+- **stitches** consecutive same-profile segments within a time gap (`--gap-min`, default 60)
+  into one firing — a single physical firing is often fragmented across many crash/restart
+  segments;
+- re-bases each sample's `runtime` to **elapsed wall-seconds from the firing start** (each
+  fragment restarts `run_time` at 0, which would otherwise fold the curve back on itself),
+  and turns the restart seams into `power_interruption`/`resumed` events;
+- keeps firings with `>= --min-samples` (default 10), embeds the planned curve from the
+  profiles dir when the name matches, infers status (`schedule ended` → completed, else the
+  last fragment's end reason), and marks the record `imported: true`.
+
+`--dry-run` prints the plan without writing. Bundles are written via
+`firingStore.import_firing` (same schema as live capture). Metadata is left empty for the
+user to fill in.
+
+Run against the production log it produced 6 firings from ~49k log lines (e.g. a 10 h 1"
+full fuse, an 18.7 h completed fuse, and one 29 h cast+anneal stitched from 10 fragments).
+**These bundles live wherever the importer writes** (`--out`); to populate the production
+device's history, run the importer there (or copy the bundles over) once the backend is
+deployed, re-stamping `controller_id` to that device's identity.
 
 ## Storage footprint
 
@@ -250,7 +270,8 @@ AWS phase.
    live in `firingStore` (`list_firings`/`get_firing`).
 5. **History UI** ← *next.* List + detail graph reusing `picoreflow.js`; event annotations.
 6. **Metadata editing.** `PATCH` + UI panel; photo upload.
-7. **Backfill importer.** One-shot script from `process.log` + CSVs.
+7. **Backfill importer** — *done* (pulled forward). `scripts/import_firings.py`; see
+   Migration / backfill above. Used to seed real history for building the UI.
 
 Each phase is independently shippable and verifiable in the simulator.
 ```
