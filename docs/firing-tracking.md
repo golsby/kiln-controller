@@ -268,8 +268,15 @@ AWS phase.
    `GET /api/firings/:id` (full record + events + samples, `?resolution=N` downsamples and
    always keeps the last point). Path-traversal-safe `:id`; unknown id → 404. Read helpers
    live in `firingStore` (`list_firings`/`get_firing`).
-5. **History UI** ← *next.* List + detail graph reusing `picoreflow.js`; event annotations.
-6. **Metadata editing.** `PATCH` + UI panel; photo upload.
+5. **History UI** — *done.* A History view in the dashboard (toggled from the header;
+   `#history` deep-link): a list sorted by firing date, and a detail view with a
+   planned-vs-actual Canvas graph (area-filled actual line, faint grid, hover crosshair),
+   event pins + red interruption bands, a typed event timeline **bidirectionally linked** to
+   the graph (select a row → mark it on the curve; click a pin → scroll to the row), and a
+   read-only notes panel. Reuses the app's design tokens; all styles scoped under
+   `#history_view`. Verified in-browser against the backfilled firings.
+6. **Metadata editing** ← *next.* Make the notes panel editable: `PATCH /api/firings/:id`
+   (title, tags, rating, outcome, defects) + photo upload + delete.
 7. **Backfill importer** — *done* (pulled forward). `scripts/import_firings.py`; see
    Migration / backfill above. Used to seed real history for building the UI.
 

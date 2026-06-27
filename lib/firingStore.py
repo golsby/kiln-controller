@@ -442,6 +442,9 @@ def list_firings(firings_dir):
             "title": meta.get("title", ""),
             "tags": meta.get("tags", []),
         })
+    # newest firing first by when it actually ran, not when its bundle was
+    # written (an imported firing's file is newer than its firing date)
+    items.sort(key=lambda it: it["summary"].get("started_at") or "", reverse=True)
     return items
 
 

@@ -29,6 +29,7 @@
 
  <div class="container">
   <div id="controller_header" style="margin-bottom:8px">
+   <button id="nav_history" type="button" class="btn btn-default btn-sm" style="float:right" onclick="showHistory()"><span class="glyphicon glyphicon-time"></span> History</button>
    <span id="controller_name" title="Click to rename this controller" style="font-size:18px; font-weight:600; cursor:pointer" onclick="editControllerName()">&nbsp;</span>
    <span id="controller_name_edit" style="display:none">
     <input id="controller_name_input" type="text" class="form-control" style="display:inline-block; width:auto; vertical-align:middle" maxlength="60" />
@@ -42,6 +43,7 @@
   <div id="watcher_alarm" class="alert alert-danger" style="display:none; margin-bottom:10px">
    <strong>&#9888; Kiln watcher fault</strong> &mdash; the independent safety watcher is not responding. The firing is continuing on the main thermocouple and the controller is retrying a reset. Check the watcher thermocouple and wiring.
   </div>
+  <div id="live_view">
   <div id="dashboard">
    <div class="dash-card temp-card" id="temp_card">
     <div class="dash-label">Sensor</div>
@@ -112,6 +114,18 @@
    </div>
    <div id="profile_table" class="panel-footer" style="display:none;"></div>
    <div id="segment_table" class="panel-footer" style="display:none;"></div>
+  </div>
+  </div><!-- /#live_view -->
+
+  <div id="history_view" style="display:none">
+   <div class="hist-bar">
+    <button type="button" class="btn btn-default btn-sm" onclick="showLive()"><span class="glyphicon glyphicon-chevron-left"></span> Live dashboard</button>
+    <h2 class="hist-title">Firing history</h2>
+   </div>
+   <div class="hist-shell">
+    <aside class="hist-rail"><div class="hist-list" id="hist_list"></div></aside>
+    <main class="hist-main" id="hist_main"></main>
+   </div>
   </div>
  </div>
 

@@ -1203,6 +1203,12 @@ $(document).ready(function()
 
             if (temp_scale == "c") {temp_scale_display = "C";} else {temp_scale_display = "F";}
 
+            // if the history view rendered before the scale arrived (e.g. a cold
+            // #history deep-link), re-render it now with the right unit
+            if ($("#history_view").is(":visible") && histList) {
+                renderHistList(histDetail ? histDetail.id : null);
+                if (histDetail) renderHistDetail(histDetail);
+            }
 
             $('#act_temp_scale').html('º'+temp_scale_display);
             $('#target_temp_scale').html('º'+temp_scale_display);
@@ -1351,4 +1357,304 @@ $(document).ready(function()
         });
 
     }
+});
+
+
+/* =======================================================================
+   Firing history (Phase 5)
+   Lists past firings from /api/firings and shows a detail view: a
+   planned-vs-actual canvas graph, an event timeline linked to the graph,
+   and read-only firing notes. Ported from the design prototype.
+   ======================================================================= */
+var histList = null;     // list summaries
+var histDetail = null;   // currently loaded full record
+var histCurve = null;    // {act, plan, events, bands, xmax, ymax}
+var histSel = null;      // selected event index (links list <-> graph)
+var histPins = [];        // {x, idx} graph pin hit-targets
+
+function histTU(){ return "°" + (typeof temp_scale_display !== "undefined" ? temp_scale_display : "F"); }
+function histEsc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+function histFmtDur(sec){
+  sec=Math.max(0,Math.round(sec)); var h=Math.floor(sec/3600), m=Math.round((sec%3600)/60);
+  return h>=1 ? (h+"h "+(m<10?"0":"")+m+"m") : (m+"m");
+}
+function histFmtClock(sec){ var h=Math.floor(sec/3600), m=Math.round((sec%3600)/60); return h+":"+(m<10?"0":"")+m; }
+function histFmtDate(iso){
+  if(!iso) return "—";
+  var d=new Date(String(iso).replace("Z","")); if(isNaN(d)) return iso;
+  return d.toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"})+" · "+
+         d.toLocaleTimeString(undefined,{hour:"numeric",minute:"2-digit"});
+}
+
+var HIST_EV = {
+  started:{c:"var(--accent)",i:"▶",t:function(e){return ["Firing started", e.detail&&e.detail.fragments>1?("reassembled from "+e.detail.fragments+" log fragments"):(e.detail&&e.detail.profile||"")];}},
+  completed:{c:"var(--accent)",i:"✓",t:function(){return ["Completed",""];}},
+  aborted:{c:"#6b7280",i:"■",t:function(){return ["Stopped",""];}},
+  interrupted:{c:"var(--warn)",i:"!",t:function(){return ["Interrupted",""];}},
+  error:{c:"var(--danger)",i:"✕",t:function(){return ["Error",""];}},
+  hold:{c:"var(--warn)",i:"❚❚",t:function(e){return ["Hold engaged", e.detail&&e.detail.setpoint?("setpoint "+Math.round(e.detail.setpoint)+histTU()):""];}},
+  hold_release:{c:"var(--warn)",i:"▷",t:function(){return ["Hold released",""];}},
+  advance:{c:"var(--info)",i:"»",t:function(e){return ["Advanced segment", e.detail?("segment "+e.detail.from_segment+" → "+e.detail.to_segment):""];}},
+  segment_target_edit:{c:"var(--info)",i:"✎",t:function(e){return ["Target edited", e.detail?("seg "+e.detail.segment+": "+Math.round(e.detail.old)+" → "+Math.round(e.detail.new)+histTU()):""];}},
+  segment_hold_edit:{c:"var(--info)",i:"✎",t:function(e){return ["Hold edited", e.detail?("seg "+e.detail.segment+": "+Math.round(e.detail.new/60)+" min"):""];}},
+  segment_transition:{c:"#9aa3b2",i:"·",t:function(e){return ["Segment "+(e.detail?e.detail.segment:""), e.detail?e.detail.phase:""];}},
+  power_interruption:{c:"var(--danger)",i:"⚡",t:function(){return ["Power interrupted",""];}},
+  resumed:{c:"var(--info)",i:"↻",t:function(e){return ["Resumed", e.detail&&e.detail.gap_s?("after "+histFmtDur(e.detail.gap_s)):(e.detail&&e.detail.from_status?("from "+e.detail.from_status):"")];}}
+};
+
+function showHistory(){ $("#live_view").hide(); $("#history_view").show(); loadFiringList();
+  if(window.history&&history.replaceState) history.replaceState(null,"","#history"); }
+function showLive(){ $("#history_view").hide(); $("#live_view").show(); $(window).trigger("resize");
+  if(window.history&&history.replaceState) history.replaceState(null,"",location.pathname+location.search); }
+
+function loadFiringList(){
+  $("#hist_list").html('<div class="hist-empty">Loading…</div>'); $("#hist_main").html("");
+  $.getJSON("/api/firings").done(function(list){
+    histList = list || [];
+    if(!histList.length){ $("#hist_list").html(""); $("#hist_main").html('<div class="hist-empty">No firings recorded yet.</div>'); return; }
+    renderHistList(null);
+    loadFiring(histList[0].id);
+  }).fail(function(){ $("#hist_list").html('<div class="hist-empty">Could not load firing history.</div>'); });
+}
+
+function renderHistList(selId){
+  var html="";
+  histList.forEach(function(f){
+    var s=f.summary||{};
+    html += '<button type="button" class="firing-card'+(f.id===selId?" sel":"")+'" onclick="loadFiring(\''+f.id+'\')">'+
+      '<div class="fc-top"><span class="fc-date tnum">'+histFmtDate(s.started_at)+'</span>'+
+      '<span class="pill '+(s.status||"")+'">'+(s.status||"")+'</span></div>'+
+      '<div class="fc-name">'+histEsc(f.profile_name||"—")+'</div>'+
+      '<div class="fc-meta tnum"><span><b>'+Math.round(s.max_temp||0)+'</b>'+histTU()+'</span>'+
+      '<span><b>'+histFmtDur(s.duration_s||0)+'</b></span></div></button>';
+  });
+  $("#hist_list").html(html);
+}
+
+function loadFiring(id){
+  renderHistList(id);
+  $("#hist_main").html('<div class="hist-empty">Loading firing…</div>');
+  $.getJSON("/api/firings/"+encodeURIComponent(id)+"?resolution=800").done(function(d){
+    histDetail=d; histSel=null; renderHistDetail(d);
+  }).fail(function(){ $("#hist_main").html('<div class="hist-empty">Could not load this firing.</div>'); });
+}
+
+function histStat(label,val,unit,accent){
+  return '<div class="stat'+(accent?" accent":"")+'"><div class="s-label">'+label+'</div>'+
+    '<div class="s-val">'+val+(unit?'<span class="u">'+unit+'</span>':'')+'</div></div>';
+}
+
+function renderHistDetail(d){
+  var s=d.summary||{};
+  var peak = s.peak_target!=null?Math.round(s.peak_target):"—";
+  var html =
+    '<div class="detail-head"><div><h1 class="dh-title">'+histEsc(d.profile.name)+'</h1>'+
+      '<div class="dh-sub tnum"><span>'+histFmtDate(s.started_at)+'</span>'+
+      (d.imported?'<span class="tag-imported">imported from log</span>':'')+'</div></div>'+
+      '<div class="dh-right"><span class="pill '+(s.status||"")+'">'+(s.status||"")+'</span></div></div>'+
+    '<div class="stats tnum">'+
+      histStat("Max temp", Math.round(s.max_temp||0), histTU(), true)+
+      histStat("Peak target", peak, histTU())+
+      histStat("Duration", histFmtDur(s.duration_s||0), "")+
+      histStat("Samples", (d.sample_count||0).toLocaleString(), "")+
+      histStat("Events", (d.events||[]).length, "")+
+    '</div>'+
+    '<div class="hist-card"><div class="card-hd"><h3>Planned vs. actual</h3>'+
+      '<div class="legend"><span class="lg"><span class="swatch" style="background:var(--heat)"></span>Actual</span>'+
+      '<span class="lg"><span class="swatch dash"></span>Planned</span>'+
+      '<span class="lg"><span class="swatch" style="background:var(--danger)"></span>Interruption</span></div></div>'+
+      '<div class="selcap" id="hist_selcap"></div>'+
+      '<div class="graph-wrap"><canvas id="hist_graph"></canvas><div class="hist-tip" id="hist_tip"></div></div></div>'+
+    '<div class="lower">'+
+      '<div class="hist-card panel-pad"><h2>Event timeline</h2><div class="timeline" id="hist_timeline"></div></div>'+
+      '<div class="hist-card panel-pad"><h2>Firing notes</h2><div class="notes-ro">'+renderHistNotes(d.metadata)+'</div></div>'+
+    '</div>';
+  $("#hist_main").html(html);
+  histBuildCurve(d);
+  histRenderTimeline(d);
+  histDrawGraph();
+  histUpdateSelCap();
+}
+
+function renderHistNotes(m){
+  m=m||{}; var o=m.outcome||{};
+  var has = m.title || (m.tags&&m.tags.length) || (o.rating) || o.summary || (o.defects&&o.defects.length);
+  if(!has) return '<div class="notes-empty">No notes recorded yet. (Adding titles, tags, ratings and photos comes next.)</div>';
+  function nr(l,v){ return '<div class="nr"><label>'+l+'</label><div class="val">'+v+'</div></div>'; }
+  function chips(a){ return '<div class="chips">'+a.map(function(x){return '<span class="chip">'+histEsc(x)+'</span>';}).join("")+'</div>'; }
+  function stars(n){ var h=""; for(var i=1;i<=5;i++) h+='<span class="'+(i<=n?"on":"")+'">★</span>'; return '<span class="stars">'+h+'</span>'; }
+  var html="";
+  if(m.title) html+=nr("Title", histEsc(m.title));
+  if(o.rating) html+=nr("Rating", stars(o.rating));
+  if(m.tags&&m.tags.length) html+=nr("Tags", chips(m.tags));
+  if(o.summary) html+=nr("What happened", histEsc(o.summary));
+  if(o.defects&&o.defects.length) html+=nr("Defects", chips(o.defects));
+  return html;
+}
+
+function histRenderTimeline(d){
+  var tl=document.getElementById("hist_timeline"); tl.innerHTML="";
+  (d.events||[]).forEach(function(e,i){
+    var def=HIST_EV[e.type]||{c:"var(--muted)",i:"·",t:function(){return [e.type,""];}};
+    var tt=def.t(e), title=tt[0], sub=tt[1];
+    var row=document.createElement("div"); row.className="ev"; row.tabIndex=0;
+    row.setAttribute("data-idx",i); row.setAttribute("data-col",histCssVar(def.c));
+    row.innerHTML='<span class="ev-time tnum">'+histFmtClock(e.runtime||0)+'</span>'+
+      '<span class="ev-ico" style="background:'+def.c+'">'+def.i+'</span>'+
+      '<span class="ev-txt"><b>'+histEsc(title)+'</b>'+(sub?' <span class="ev-sub">— '+histEsc(sub)+'</span>':'')+'</span>';
+    row.onclick=function(){ histSelectEvent(i); };
+    row.onkeydown=function(ev){ if(ev.key==="Enter"||ev.key===" "){ ev.preventDefault(); histSelectEvent(i); } };
+    tl.appendChild(row);
+  });
+}
+
+function histSelectEvent(idx){
+  histSel = (histSel===idx)?null:idx;
+  $("#hist_timeline .ev").each(function(){
+    var on = (+this.getAttribute("data-idx")===histSel);
+    this.className = "ev"+(on?" sel":"");
+    this.style.boxShadow = on ? ("inset 3px 0 0 "+this.getAttribute("data-col")) : "";
+  });
+  histUpdateSelCap(); histDrawGraph();
+}
+function histSelectFromGraph(idx){
+  histSelectEvent(idx);
+  if(histSel!=null){ var row=document.querySelector('#hist_timeline .ev[data-idx="'+histSel+'"]'); if(row) row.scrollIntoView({block:"nearest",behavior:"smooth"}); }
+}
+function histUpdateSelCap(){
+  var cap=document.getElementById("hist_selcap"); if(!cap) return;
+  if(histSel==null || !histCurve || !histCurve.events[histSel]){ cap.innerHTML='<span class="muted">Tip: select an event below to mark it on the graph</span>'; return; }
+  var e=histCurve.events[histSel], def=HIST_EV[e.type]||{c:"var(--ink)",t:function(){return [e.type,""];}};
+  var tt=def.t(e);
+  cap.innerHTML='<span class="seldot" style="background:'+histCssVar(def.c)+'"></span><b>'+histEsc(tt[0])+'</b>'+
+    (tt[1]?' <span class="muted">— '+histEsc(tt[1])+'</span>':'')+
+    ' <span class="muted tnum">· '+histFmtClock(e.runtime||0)+' elapsed</span>'+
+    '<button type="button" class="selx" onclick="histSelectEvent('+histSel+')">clear</button>';
+}
+
+function histBuildCurve(d){
+  var act=(d.samples||[]).map(function(s){return [s.runtime,s.temperature];});
+  var plan=((d.profile&&d.profile.data)||[]).map(function(p){return [p[0],p[1]];});
+  var xmax=0,ymax=0;
+  act.forEach(function(p){xmax=Math.max(xmax,p[0]); ymax=Math.max(ymax,p[1]);});
+  plan.forEach(function(p){xmax=Math.max(xmax,p[0]); ymax=Math.max(ymax,p[1]);});
+  ymax=Math.ceil((ymax*1.08)/100)*100||100;
+  var bands=[], open=null;
+  (d.events||[]).forEach(function(e){ if(e.type==="power_interruption") open=e.runtime;
+    else if(e.type==="resumed"&&open!=null){ bands.push([open,e.runtime]); open=null; } });
+  histCurve={act:act,plan:plan,xmax:xmax||1,ymax:ymax,events:d.events||[],bands:bands};
+}
+
+function histDrawGraph(){
+  var cv=document.getElementById("hist_graph"); if(!cv||!histCurve) return;
+  var dpr=window.devicePixelRatio||1, W=cv.clientWidth, H=cv.clientHeight;
+  cv.width=W*dpr; cv.height=H*dpr;
+  var g=cv.getContext("2d"); g.setTransform(dpr,0,0,dpr,0,0); g.clearRect(0,0,W,H);
+  var m={l:46,r:14,t:18,b:40}, pw=W-m.l-m.r, ph=H-m.t-m.b;
+  var X=function(x){return m.l+(x/histCurve.xmax)*pw;}, Y=function(y){return m.t+ph-(y/histCurve.ymax)*ph;};
+
+  histCurve.bands.forEach(function(b){
+    var x0=X(b[0]), x1=X(b[1]);
+    g.fillStyle="rgba(255,59,48,.07)"; g.fillRect(x0,m.t,Math.max(2,x1-x0),ph);
+    g.strokeStyle="rgba(255,59,48,.35)"; g.lineWidth=1; g.setLineDash([3,3]);
+    g.beginPath(); g.moveTo(x0,m.t); g.lineTo(x0,m.t+ph); g.moveTo(x1,m.t); g.lineTo(x1,m.t+ph); g.stroke(); g.setLineDash([]);
+  });
+
+  g.fillStyle="#9aa3b2"; g.font="11px -apple-system,system-ui,sans-serif"; g.lineWidth=1;
+  g.textAlign="right"; g.textBaseline="middle";
+  var ystep=histNiceStep(histCurve.ymax,5);
+  for(var v=0; v<=histCurve.ymax+1; v+=ystep){ var y=Y(v);
+    g.strokeStyle="#e6e9ef"; g.globalAlpha=.8; g.beginPath(); g.moveTo(m.l,y); g.lineTo(W-m.r,y); g.stroke(); g.globalAlpha=1;
+    g.fillText(v.toFixed(0), m.l-8, y); }
+  g.textAlign="center"; g.textBaseline="top";
+  var xstep=histNiceStep(histCurve.xmax,6);
+  for(var xv=0; xv<=histCurve.xmax+1; xv+=xstep){ g.fillText(histFmtClock(xv), X(xv), m.t+ph+8); }
+  g.textAlign="left"; g.fillText(histTU(), 6, m.t-2);
+
+  if(histCurve.plan.length){
+    g.strokeStyle="#0a84ff"; g.lineWidth=1.6; g.setLineDash([5,4]); g.beginPath();
+    histCurve.plan.forEach(function(p,i){ var x=X(p[0]),y=Y(p[1]); i?g.lineTo(x,y):g.moveTo(x,y); });
+    g.stroke(); g.setLineDash([]);
+  }
+  if(histCurve.act.length){
+    var grad=g.createLinearGradient(0,m.t,0,m.t+ph);
+    grad.addColorStop(0,"rgba(255,107,53,.22)"); grad.addColorStop(1,"rgba(255,107,53,0)");
+    g.beginPath(); histCurve.act.forEach(function(p,i){ var x=X(p[0]),y=Y(p[1]); i?g.lineTo(x,y):g.moveTo(x,y); });
+    var last=histCurve.act[histCurve.act.length-1], first=histCurve.act[0];
+    g.lineTo(X(last[0]),Y(0)); g.lineTo(X(first[0]),Y(0)); g.closePath(); g.fillStyle=grad; g.fill();
+    g.beginPath(); g.strokeStyle="#ff6b35"; g.lineWidth=2.2; g.lineJoin="round";
+    histCurve.act.forEach(function(p,i){ var x=X(p[0]),y=Y(p[1]); i?g.lineTo(x,y):g.moveTo(x,y); });
+    g.stroke();
+    g.fillStyle="#ff6b35"; g.beginPath(); g.arc(X(last[0]),Y(last[1]),3.5,0,7); g.fill();
+  }
+
+  histPins=[];
+  histCurve.events.forEach(function(e,idx){
+    if(e.type==="segment_transition"||e.type==="resumed") return;
+    var def=HIST_EV[e.type]; if(!def) return; var x=X(e.runtime||0);
+    histPins.push({x:x,idx:idx});
+    g.strokeStyle="rgba(17,21,28,.08)"; g.lineWidth=1; g.beginPath(); g.moveTo(x,m.t); g.lineTo(x,m.t+ph); g.stroke();
+    g.fillStyle=histCssVar(def.c); g.beginPath(); g.arc(x,m.t-1,3.2,0,7); g.fill();
+  });
+  if(histSel!=null && histCurve.events[histSel]){
+    var se=histCurve.events[histSel], sdef=HIST_EV[se.type]||{c:"var(--ink)"}, col=histCssVar(sdef.c), sx=X(se.runtime||0);
+    g.strokeStyle=col; g.lineWidth=1.6; g.setLineDash([4,3]); g.beginPath(); g.moveTo(sx,m.t-4); g.lineTo(sx,m.t+ph); g.stroke(); g.setLineDash([]);
+    g.fillStyle=col; g.beginPath(); g.arc(sx,m.t-4,4.5,0,7); g.fill();
+    var yv=histInterp(histCurve.act, se.runtime||0);
+    if(yv!=null){ var py=Y(yv); g.fillStyle="#fff"; g.strokeStyle=col; g.lineWidth=2.5; g.beginPath(); g.arc(sx,py,5.5,0,7); g.fill(); g.stroke(); }
+  }
+  histDrawCrosshair();
+}
+
+var histHoverX=null;
+function histDrawCrosshair(){
+  var cv=document.getElementById("hist_graph"); if(histHoverX==null||!histCurve||!cv||!histCurve.act.length) return;
+  var g=cv.getContext("2d"), W=cv.clientWidth, H=cv.clientHeight;
+  var m={l:46,r:14,t:18,b:40}, pw=W-m.l-m.r, ph=H-m.t-m.b;
+  var xv=(histHoverX-m.l)/pw*histCurve.xmax;
+  var lo=0,hi=histCurve.act.length-1;
+  for(var i=0;i<histCurve.act.length;i++){ if(histCurve.act[i][0]>=xv){ hi=i; lo=Math.max(0,i-1); break; } }
+  var p=(Math.abs(histCurve.act[lo][0]-xv)<Math.abs(histCurve.act[hi][0]-xv))?histCurve.act[lo]:histCurve.act[hi];
+  var X=function(x){return m.l+(x/histCurve.xmax)*pw;}, Y=function(y){return m.t+ph-(y/histCurve.ymax)*ph;};
+  var px=X(p[0]), py=Y(p[1]);
+  g.strokeStyle="rgba(17,21,28,.22)"; g.lineWidth=1; g.setLineDash([2,3]); g.beginPath(); g.moveTo(px,m.t); g.lineTo(px,m.t+ph); g.stroke(); g.setLineDash([]);
+  g.fillStyle="#fff"; g.strokeStyle="#ff6b35"; g.lineWidth=2; g.beginPath(); g.arc(px,py,4,0,7); g.fill(); g.stroke();
+  var pv=histInterp(histCurve.plan,p[0]);
+  var tip=document.getElementById("hist_tip");
+  tip.style.opacity=1; tip.style.left=px+"px"; tip.style.top=py+"px";
+  tip.innerHTML='<div class="tt-t">'+histFmtClock(p[0])+' elapsed</div>'+
+    '<div class="tt-row"><span class="d" style="background:#ff6b35"></span>Actual <b style="margin-left:auto">'+Math.round(p[1])+'°</b></div>'+
+    (pv!=null?'<div class="tt-row"><span class="d" style="background:#0a84ff"></span>Planned <b style="margin-left:auto">'+Math.round(pv)+'°</b></div>':'');
+}
+function histInterp(pts,x){
+  if(!pts||!pts.length) return null;
+  if(x<=pts[0][0]) return pts[0][1]; if(x>=pts[pts.length-1][0]) return pts[pts.length-1][1];
+  for(var i=0;i<pts.length-1;i++){ if(pts[i+1][0]>=x){ var a=pts[i],b=pts[i+1]; return a[1]+(b[1]-a[1])*(x-a[0])/((b[0]-a[0])||1); } }
+  return null;
+}
+function histNiceStep(max,n){ var raw=max/n, p=Math.pow(10,Math.floor(Math.log10(raw||1))), c=raw/p; var s=c<1.5?1:c<3?2:c<7?5:10; return s*p||1; }
+function histCssVar(v){ if(v&&v.indexOf("var(")===0){ return getComputedStyle(document.documentElement).getPropertyValue(v.slice(4,-1)).trim()||"#999"; } return v; }
+
+document.addEventListener("mousemove",function(e){
+  var cv=document.getElementById("hist_graph"); if(!cv) return; var r=cv.getBoundingClientRect();
+  if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom){ if(histHoverX!=null){ histHoverX=null; var t=document.getElementById("hist_tip"); if(t)t.style.opacity=0; histDrawGraph(); } return; }
+  histHoverX=e.clientX-r.left; histDrawGraph();
+});
+document.addEventListener("click",function(e){
+  var cv=document.getElementById("hist_graph"); if(!cv||!histPins.length) return; var r=cv.getBoundingClientRect();
+  if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom) return;
+  var x=e.clientX-r.left, best=null, bd=14;
+  histPins.forEach(function(p){ var dd=Math.abs(p.x-x); if(dd<bd){ bd=dd; best=p.idx; } });
+  if(best!=null) histSelectFromGraph(best);
+});
+var histRT; window.addEventListener("resize",function(){ if($("#history_view").is(":visible")){ clearTimeout(histRT); histRT=setTimeout(histDrawGraph,80); } });
+
+/* deep-link: #history opens the history view (bookmarkable; the cloud proxy
+   can link straight to it). showHistory/showLive keep the hash in sync. */
+$(function(){
+  if(location.hash==="#history") showHistory();
+  window.addEventListener("hashchange",function(){
+    if(location.hash==="#history"){ if(!$("#history_view").is(":visible")) showHistory(); }
+    else if($("#history_view").is(":visible")) showLive();
+  });
 });
