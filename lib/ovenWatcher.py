@@ -134,13 +134,17 @@ class OvenWatcher(threading.Thread):
             log.error("Kiln Watcher OVER TEMP ALARM")
             if firing:
                 self.oven.abort_run_with_error("ERROR: Safe Temp Exceeded")
-        except KilnWatcherError:
+        except Exception as e:
+            # ANY watcher read failure is a fault: the protocol error
+            # (KilnWatcherError) OR a raw I2C/bus error (OSError, e.g.
+            # [Errno 121] Remote I/O error when the Arduino isn't responding).
+            # A dead bus is the more dangerous case, so it must not be
+            # swallowed. Only act while firing; otherwise ignore.
             if not firing:
-                # ignore watcher faults while idle (resolve any open incident)
                 self._clear_watcher_alarm("Kiln watcher alarm cleared (idle)")
                 return
             self.watcher_errors += 1
-            log.error("Kiln Watcher Error (%d)" % self.watcher_errors)
+            log.error("Kiln watcher fault (%d): %s" % (self.watcher_errors, e))
             if self.watcher_errors == self.watcher_error_threshold:
                 log.warning("kiln watcher faulted - attempting reset")
                 self.reset_watcher()
@@ -152,8 +156,6 @@ class OvenWatcher(threading.Thread):
                 # keep trying to reset periodically (~every 5 polls)
                 if self.watcher_errors % 5 == 0:
                     self.reset_watcher()
-        except Exception:
-            pass
 
     def lastlog_subset(self,maxpts=3000):
         '''send about maxpts from lastlog by skipping unwanted data'''

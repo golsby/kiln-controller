@@ -106,6 +106,21 @@ def handle_api():
         log.debug("api stop command received")
         oven.abort_run()
 
+    # resume the last stopped/failed firing from its saved position
+    if bottle.request.json['cmd'] == 'resume':
+        info = oven.resume_info
+        if not info:
+            return { "success": False, "error": "nothing to resume" }
+        try:
+            filename = "%s.json" % info['profile']
+            with open(os.path.join(profile_path, filename)) as f:
+                profile = Profile(json.load(f))
+            run_and_watch(profile, resume_state=info)
+            log.info("api resume: %s (segment %s)" % (info['profile'], info.get('segment')))
+            return { "success": True, "profile": info['profile'] }
+        except Exception as e:
+            return { "success": False, "error": str(e) }
+
     # debug-only: force the simulated kiln's temperature (e.g. to test resume
     # after the kiln has cooled). No effect on a real kiln.
     if bottle.request.json['cmd'] == 'set_temp':
