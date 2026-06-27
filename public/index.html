@@ -28,6 +28,14 @@
 <body>
 
  <div class="container">
+  <div id="controller_header" style="margin-bottom:8px">
+   <span id="controller_name" title="Click to rename this controller" style="font-size:18px; font-weight:600; cursor:pointer" onclick="editControllerName()">&nbsp;</span>
+   <span id="controller_name_edit" style="display:none">
+    <input id="controller_name_input" type="text" class="form-control" style="display:inline-block; width:auto; vertical-align:middle" maxlength="60" />
+    <button type="button" class="btn btn-default btn-sm" onclick="saveControllerName()"><span class="glyphicon glyphicon-ok"></span></button>
+    <button type="button" class="btn btn-default btn-sm" onclick="cancelControllerName()"><span class="glyphicon glyphicon-remove"></span></button>
+   </span>
+  </div>
   <div id="conn_banner" class="alert alert-warning" style="display:none; margin-bottom:10px">
    <strong>&#9888; Disconnected from the controller</strong> &mdash; the live display is not updating. Trying to reconnect&hellip; (this clears automatically once the connection is restored).
   </div>

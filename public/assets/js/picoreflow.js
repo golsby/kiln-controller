@@ -598,6 +598,55 @@ function updateHoldButton()
     }
 }
 
+var controller_name = "";
+
+// show the controller's human name in the header; keep the edit field in sync
+function setControllerName(name)
+{
+    controller_name = name;
+    $('#controller_name').text(name);
+    document.title = name + " — Kiln Controller";
+}
+
+// switch the header into inline-edit mode
+function editControllerName()
+{
+    $('#controller_name_input').val(controller_name);
+    $('#controller_name').hide();
+    $('#controller_name_edit').show();
+    $('#controller_name_input').focus().select();
+}
+
+function cancelControllerName()
+{
+    $('#controller_name_edit').hide();
+    $('#controller_name').show();
+}
+
+// persist the new name via the REST /api endpoint, then update the header
+function saveControllerName()
+{
+    var name = $.trim($('#controller_name_input').val());
+    if (name === "") { return; }
+    $.ajax({
+        url: "/api",
+        type: "POST",
+        contentType: "application/json",
+        data: JSON.stringify({"cmd": "set_controller_name", "name": name}),
+        success: function(resp) {
+            if (resp && resp.success) {
+                setControllerName(resp.name);
+                cancelControllerName();
+            } else {
+                $.bootstrapGrowl((resp && resp.error) || "Could not rename controller", {type: "danger"});
+            }
+        },
+        error: function() {
+            $.bootstrapGrowl("Could not reach the controller to rename it", {type: "danger"});
+        }
+    });
+}
+
 function clearProfile()
 {
     if (state == "RUNNING") return;
@@ -1149,6 +1198,8 @@ $(document).ready(function()
             time_scale_profile = x.time_scale_profile;
             kwh_rate = x.kwh_rate;
             currency_type = x.currency_type;
+
+            if (x.controller_name) { setControllerName(x.controller_name); }
 
             if (temp_scale == "c") {temp_scale_display = "C";} else {temp_scale_display = "F";}
 

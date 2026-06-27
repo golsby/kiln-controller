@@ -52,6 +52,10 @@ profile_path = config.kiln_profiles_directory
 
 from oven import SimulatedOven, RealOven, Profile
 from ovenWatcher import OvenWatcher
+import identity
+
+# controller identity (GUID + human name); auto-created on first run
+controller = identity.load_or_create(config.controller_state_file)
 
 app = bottle.Bottle()
 
@@ -133,6 +137,16 @@ def handle_api():
             return { "success": True, "temp": float(temp) }
         except (TypeError, ValueError):
             return { "success": False, "error": "invalid temp" }
+
+    # rename the controller (human-friendly label shown on the dashboard)
+    if bottle.request.json['cmd'] == 'set_controller_name':
+        try:
+            updated = identity.set_name(config.controller_state_file,
+                                        bottle.request.json.get('name'))
+            controller["name"] = updated["name"]
+            return { "success": True, "name": updated["name"] }
+        except ValueError as e:
+            return { "success": False, "error": str(e) }
 
     if bottle.request.json['cmd'] == 'memo':
         log.debug("api memo command received")
@@ -426,7 +440,9 @@ def get_config():
         "time_scale_slope": config.time_scale_slope,
         "time_scale_profile": config.time_scale_profile,
         "kwh_rate": config.kwh_rate,
-        "currency_type": config.currency_type})    
+        "currency_type": config.currency_type,
+        "controller_id": controller["id"],
+        "controller_name": controller["name"]})
 
 
 def main():

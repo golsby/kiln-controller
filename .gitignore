@@ -11,6 +11,7 @@ thumbs.db
 *.log
 state.json
 resume.json
+controller.json
 graph*
 .DS_Store*
 .env

@@ -224,6 +224,11 @@ automatic_restart_state_file = os.path.abspath(os.path.join(os.path.dirname( __f
 # kept on Stop/error and removed only on natural completion or Clear.
 resume_state_file = os.path.abspath(os.path.join(os.path.dirname( __file__ ),'resume.json'))
 
+# Controller identity (GUID + human name). Gitignored, per-device, auto-created
+# on first run. The GUID makes a controller unique across all tenants; the name
+# is shown on the dashboard and is editable. See lib/identity.py.
+controller_state_file = os.path.abspath(os.path.join(os.path.dirname( __file__ ),'controller.json'))
+
 ########################################################################
 # load kiln profiles from this directory
 # created a repo where anyone can contribute profiles. The objective is
