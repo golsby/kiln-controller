@@ -338,10 +338,11 @@ class OvenWatcher(threading.Thread):
             'log': self.lastlog_subset(),
             #'started': self.started
         }
-        print(backlog)
+        # NB: do NOT print() the backlog — during a firing it's thousands of
+        # samples, and a synchronous print to journald on every websocket
+        # (re)connect briefly stalls the (non-monkey-patched) gevent server.
         backlog_json = json.dumps(backlog)
         try:
-            print(backlog_json)
             observer.send(backlog_json)
         except:
             log.error("Could not send backlog to new observer")
