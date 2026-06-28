@@ -554,11 +554,15 @@ body {
    Everything is scoped under #history_view so it never collides with the
    live dashboard's .panel / .card / .tooltip styles.
    ========================================================================= */
-#history_view .hist-bar { display:flex; align-items:center; gap:14px; margin-bottom:14px; }
-#history_view .hist-title { font-size:20px; font-weight:700; margin:0; color:var(--ink); }
+#history_view .hist-title { font-size:18px; font-weight:700; margin:0 4px 10px; color:var(--ink); }
 #history_view .hist-shell { display:grid; grid-template-columns:300px 1fr; gap:18px; align-items:start; }
+#history_view .hist-rail { min-width:0; }
 #history_view .hist-list { display:flex; flex-direction:column; gap:8px; }
 #history_view .hist-main { display:flex; flex-direction:column; gap:16px; min-width:0; }
+/* back-to-list button: only used on mobile (master-detail) */
+#history_view .hist-back { display:none; align-items:center; gap:6px; align-self:flex-start;
+    border:1px solid var(--line); background:var(--card); color:var(--ink);
+    border-radius:10px; padding:7px 12px; font-size:13px; font-weight:600; cursor:pointer; }
 
 #history_view .firing-card {
     background:var(--card); border:1px solid var(--line); border-radius:14px;
@@ -647,10 +651,16 @@ body {
 #history_view .tnum { font-variant-numeric:tabular-nums; }
 #history_view .hist-empty { padding:40px; text-align:center; color:var(--muted); }
 
+/* mobile: master-detail. Show the list OR the detail, never both side by side
+   (the side-by-side layout forced the page wider than the phone). */
 @media (max-width:900px) {
-    #history_view .hist-shell { grid-template-columns:1fr; }
-    #history_view .hist-list { flex-direction:row; overflow-x:auto; padding-bottom:8px; }
-    #history_view .firing-card { flex:0 0 auto; width:212px; }
+    #history_view .hist-shell { display:block; }
+    #history_view .hist-rail { display:block; }
+    #history_view .hist-main { display:none; }
+    #history_view.detail-open .hist-rail { display:none; }
+    #history_view.detail-open .hist-main { display:flex; }
+    #history_view .hist-back { display:inline-flex; }
     #history_view .stats { grid-template-columns:repeat(2,1fr); }
     #history_view .lower { grid-template-columns:1fr; }
+    #history_view .dh-title { font-size:21px; }
 }

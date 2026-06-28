@@ -1402,18 +1402,25 @@ var HIST_EV = {
   resumed:{c:"var(--info)",i:"↻",t:function(e){return ["Resumed", e.detail&&e.detail.gap_s?("after "+histFmtDur(e.detail.gap_s)):(e.detail&&e.detail.from_status?("from "+e.detail.from_status):"")];}}
 };
 
-function showHistory(){ $("#live_view").hide(); $("#history_view").show(); loadFiringList();
+function toggleHistory(){ if($("#history_view").is(":visible")) showLive(); else showHistory(); }
+function showHistory(){ $("#live_view").hide(); $("#history_view").show().removeClass("detail-open"); loadFiringList();
+  $("#nav_history").html('<span class="glyphicon glyphicon-chevron-left"></span> Live dashboard');
   if(window.history&&history.replaceState) history.replaceState(null,"","#history"); }
 function showLive(){ $("#history_view").hide(); $("#live_view").show(); $(window).trigger("resize");
+  $("#nav_history").html('<span class="glyphicon glyphicon-time"></span> History');
   if(window.history&&history.replaceState) history.replaceState(null,"",location.pathname+location.search); }
+function histBackToList(){ $("#history_view").removeClass("detail-open"); }
 
 function loadFiringList(){
   $("#hist_list").html('<div class="hist-empty">Loading…</div>'); $("#hist_main").html("");
   $.getJSON("/api/firings").done(function(list){
     histList = list || [];
     if(!histList.length){ $("#hist_list").html(""); $("#hist_main").html('<div class="hist-empty">No firings recorded yet.</div>'); return; }
+    $("#history_view").removeClass("detail-open");
     renderHistList(null);
-    loadFiring(histList[0].id);
+    // desktop shows both panes, so preload the newest firing; on mobile we stay
+    // on the list until the user taps one (master-detail)
+    if(window.innerWidth>900) loadFiring(histList[0].id); else $("#hist_main").html("");
   }).fail(function(){ $("#hist_list").html('<div class="hist-empty">Could not load firing history.</div>'); });
 }
 
@@ -1432,6 +1439,7 @@ function renderHistList(selId){
 }
 
 function loadFiring(id){
+  $("#history_view").addClass("detail-open");   // mobile: switch to the detail screen
   renderHistList(id);
   $("#hist_main").html('<div class="hist-empty">Loading firing…</div>');
   $.getJSON("/api/firings/"+encodeURIComponent(id)+"?resolution=800").done(function(d){
@@ -1448,6 +1456,7 @@ function renderHistDetail(d){
   var s=d.summary||{};
   var peak = s.peak_target!=null?Math.round(s.peak_target):"—";
   var html =
+    '<button type="button" class="hist-back" onclick="histBackToList()"><span class="glyphicon glyphicon-chevron-left"></span> All firings</button>'+
     '<div class="detail-head"><div><h1 class="dh-title">'+histEsc(d.profile.name)+'</h1>'+
       '<div class="dh-sub tnum"><span>'+histFmtDate(s.started_at)+'</span>'+
       (d.imported?'<span class="tag-imported">imported from log</span>':'')+'</div></div>'+
