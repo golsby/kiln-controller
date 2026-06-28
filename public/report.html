@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+ <title>Firing Report</title>
+ <meta name="viewport" content="width=device-width, initial-scale=1.0">
+ <script src="assets/js/jquery-1.10.2.min.js"></script>
+ <script src="assets/js/picoreflow.js"></script>
+ <link rel="stylesheet" href="assets/css/picoreflow.css"/>
+ <link rel="icon" href="assets/images/kiln-icon.png"/>
+ <style>
+  body.hist-scope { background:#fff; margin:0 auto; padding:24px; max-width:900px;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; color:#11151c; }
+  .rpt-head { display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; border-bottom:2px solid #e6e9ef; padding-bottom:12px; margin-bottom:18px; }
+  .rpt-title { font-size:26px; font-weight:700; margin:0; letter-spacing:-.02em; }
+  .rpt-sub { color:#6b7280; font-size:14px; margin-top:4px; }
+  .rpt-print { margin-left:auto; }
+  .rpt-print button { border:none; background:#0a84ff; color:#fff; border-radius:10px; padding:9px 16px; font-weight:600; font-size:14px; cursor:pointer; }
+  .rpt-section { margin:22px 0; }
+  .rpt-section > h2 { font-size:13px; text-transform:uppercase; letter-spacing:.06em; color:#6b7280; margin:0 0 10px; font-weight:600; }
+  .rpt-notes .nr { margin-bottom:10px; }
+  .rpt-notes label { display:block; font-weight:600; color:#6b7280; font-size:11px; text-transform:uppercase; letter-spacing:.06em; margin-bottom:2px; }
+  .rpt-stars { color:#ff9500; font-size:18px; letter-spacing:2px; }
+  .rpt-photos { display:grid; grid-template-columns:repeat(2,1fr); gap:14px; }
+  .rpt-photo img { width:100%; border-radius:10px; border:1px solid #e6e9ef; display:block; }
+  .rpt-photo .cap { font-size:13px; color:#374151; margin-top:5px; }
+  @media print {
+    body.hist-scope { padding:0; max-width:none; }
+    .rpt-print { display:none; }
+    .rpt-section, .hist-card, .rpt-photo, .ev { break-inside:avoid; }
+    .hist-scope #hist_graph { height:300px !important; }
+  }
+ </style>
+</head>
+<body class="hist-scope">
+ <div id="report"><div class="hist-empty">Loading…</div></div>
+ <script>
+ (function(){
+   function reportNotes(m,o){
+     var parts=[];
+     if(o.rating){ var st=""; for(var i=1;i<=5;i++) st+=(i<=o.rating?"★":"☆");
+       parts.push('<div class="nr"><label>Rating</label><div class="rpt-stars">'+st+'</div></div>'); }
+     if(m.tags&&m.tags.length) parts.push('<div class="nr"><label>Tags</label><div>'+m.tags.map(histEsc).join(", ")+'</div></div>');
+     if(o.summary) parts.push('<div class="nr"><label>What happened</label><div>'+histEsc(o.summary).replace(/\n/g,"<br>")+'</div></div>');
+     if(o.defects&&o.defects.length) parts.push('<div class="nr"><label>Defects</label><div>'+o.defects.map(histEsc).join(", ")+'</div></div>');
+     return parts.length?parts.join(""):'<div style="color:#6b7280">No notes recorded.</div>';
+   }
+   function reportPhotos(d){
+     var photos=(d.metadata&&d.metadata.photos)||[]; if(!photos.length) return "";
+     var id=encodeURIComponent(d.id);
+     return '<div class="rpt-section"><h2>Photos</h2><div class="rpt-photos">'+
+       photos.map(function(p){
+         var t=(typeof p.runtime==="number")?("at "+histFmtClock(p.runtime)):"";
+         var cap=t+(p.note?((t?" — ":"")+histEsc(p.note)):"");
+         return '<div class="rpt-photo"><img src="/api/firings/'+id+'/photos/'+encodeURIComponent(p.file)+'">'+
+           (cap?'<div class="cap">'+cap+'</div>':"")+'</div>';
+       }).join("")+'</div></div>';
+   }
+
+   var q=new URLSearchParams(location.search), id=q.get("id"), scale=q.get("scale");
+   if(scale){ temp_scale=scale; temp_scale_display=(scale==="c")?"C":"F"; }
+   if(!id){ document.getElementById("report").innerHTML='<div class="hist-empty">No firing id in the URL.</div>'; return; }
+   $.getJSON("/api/firings/"+encodeURIComponent(id)+"?resolution=1500").done(function(d){
+     histDetail=d; histSel=null;
+     var s=d.summary||{}, m=d.metadata||{}, o=m.outcome||{};
+     var heading=m.title||d.profile.name;
+     document.title="Firing Report — "+heading;
+     document.getElementById("report").innerHTML=
+       '<div class="rpt-head"><div><h1 class="rpt-title">'+histEsc(heading)+'</h1>'+
+         '<div class="rpt-sub">'+histFmtDate(s.started_at)+' · '+(s.status||"")+
+         (m.title?(' · '+histEsc(d.profile.name)):"")+(d.imported?" · imported from log":"")+'</div></div>'+
+         '<div class="rpt-print"><button onclick="window.print()">Print</button></div></div>'+
+       '<div class="stats tnum">'+histStatsHtml(s)+'</div>'+
+       '<div class="rpt-section"><div class="hist-card"><div class="card-hd"><h3>Planned vs. actual</h3>'+
+         '<div class="legend"><span class="lg"><span class="swatch" style="background:var(--heat)"></span>Actual</span>'+
+         '<span class="lg"><span class="swatch dash"></span>Planned</span>'+
+         '<span class="lg"><span class="swatch" style="background:var(--danger)"></span>Interruption</span>'+
+         '<span class="lg">📷 Photo</span></div></div>'+
+         '<div class="graph-wrap"><canvas id="hist_graph"></canvas><div class="hist-tip" id="hist_tip"></div></div></div></div>'+
+       '<div class="rpt-section"><h2>Event timeline</h2><div class="timeline" id="hist_timeline"></div></div>'+
+       '<div class="rpt-section rpt-notes"><h2>Notes</h2>'+reportNotes(m,o)+'</div>'+
+       reportPhotos(d);
+     histBuildCurve(d); histDrawGraph(); histRenderTimeline(d);
+     setTimeout(histDrawGraph, 200);   // redraw once the canvas has its laid-out width
+   }).fail(function(){ document.getElementById("report").innerHTML='<div class="hist-empty">Could not load this firing.</div>'; });
+ })();
+ </script>
+</body>
+</html>

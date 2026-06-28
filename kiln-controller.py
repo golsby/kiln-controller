@@ -108,11 +108,22 @@ def handle_get_firing(fid):
     return json.dumps(data)
 
 
+def _live_recorder(fid):
+    '''Return the active FiringRecorder if `fid` is the firing currently being
+    recorded, else None. Edits to a live firing must go through it (it owns
+    record.json in memory and re-flushes it) or the watcher's next flush would
+    clobber them.'''
+    rec = getattr(ovenWatcher, 'firing', None)
+    return rec if (rec is not None and rec.id == fid) else None
+
+
 @app.route('/api/firings/<fid>', method='PATCH')
 def handle_update_firing(fid):
     '''Edit a firing's user metadata (title, tags, rating, summary, defects).'''
     bottle.response.content_type = 'application/json'
-    meta = firingStore.update_metadata(config.firings_directory, fid, bottle.request.json or {})
+    patch = bottle.request.json or {}
+    live = _live_recorder(fid)
+    meta = live.update_metadata(patch) if live else firingStore.update_metadata(config.firings_directory, fid, patch)
     if meta is None:
         bottle.response.status = 404
         return json.dumps({"error": "firing not found"})
@@ -122,6 +133,9 @@ def handle_update_firing(fid):
 @app.route('/api/firings/<fid>', method='DELETE')
 def handle_delete_firing(fid):
     bottle.response.content_type = 'application/json'
+    if _live_recorder(fid) is not None:
+        bottle.response.status = 409
+        return json.dumps({"error": "cannot delete a firing while it is running"})
     if not firingStore.delete_firing(config.firings_directory, fid):
         bottle.response.status = 404
         return json.dumps({"error": "firing not found"})
@@ -135,17 +149,45 @@ def handle_add_photo(fid):
     if upload is None:
         bottle.response.status = 400
         return json.dumps({"error": "no photo in request"})
-    name = firingStore.add_photo(config.firings_directory, fid, upload)
+    # optional capture time (firing-clock seconds) sent when shooting during a run
+    runtime = None
+    rt = bottle.request.forms.get('runtime')
+    if rt not in (None, ""):
+        try:
+            runtime = float(rt)
+        except (TypeError, ValueError):
+            runtime = None
+    live = _live_recorder(fid)
+    name = live.add_photo(upload, runtime) if live else \
+        firingStore.add_photo(config.firings_directory, fid, upload, runtime)
     if name is None:
         bottle.response.status = 400
         return json.dumps({"error": "unsupported image type or unknown firing"})
     return json.dumps({"success": True, "file": name})
 
 
+@app.route('/api/firings/<fid>/photos/<name>', method='PATCH')
+def handle_update_photo(fid, name):
+    '''Set a photo's note / placement (runtime).'''
+    bottle.response.content_type = 'application/json'
+    patch = bottle.request.json or {}
+    live = _live_recorder(fid)
+    p = live.update_photo(name, patch) if live else \
+        firingStore.update_photo(config.firings_directory, fid, name, patch)
+    if p is None:
+        bottle.response.status = 404
+        return json.dumps({"error": "photo not found"})
+    return json.dumps({"success": True, "photo": p})
+
+
 @app.route('/api/firings/<fid>/photos/<name>', method='DELETE')
 def handle_delete_photo(fid, name):
     bottle.response.content_type = 'application/json'
-    firingStore.delete_photo(config.firings_directory, fid, name)
+    live = _live_recorder(fid)
+    if live:
+        live.delete_photo(name)
+    else:
+        firingStore.delete_photo(config.firings_directory, fid, name)
     return json.dumps({"success": True})
 
 

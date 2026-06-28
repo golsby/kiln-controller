@@ -431,15 +431,14 @@ function holdLabel(seconds)
 
 function renderSegmentEditor(segments, active)
 {
-    var html = '<button id="nav_edit_segments" type="button" class="btn btn-default btn-sm" onclick="toggleSegmentsEdit()" style="float:right; margin-top:4px"><span class="glyphicon glyphicon-edit"></span> Edit</button>';
-    html += '<h4>Segments <small>(click Edit, then click a segment on the graph to change it)</small></h4>';
+    var html = '<h4 style="margin-top:0">Segments <small>tap a row, then edit its target or hold</small></h4>';
     html += '<div class="table-responsive"><table class="table table-condensed" style="margin-bottom:0">';
     html += '<tr><th style="width:40px">#</th><th>Rate &deg;'+temp_scale_display+'/hr</th><th>Target &deg;'+temp_scale_display+'</th><th>Hold (min)</th></tr>';
     for (var i=0; i<segments.length; i++)
     {
         var s = segments[i];
         var cls = (i === active) ? ' class="info"' : '';
-        html += '<tr'+cls+'><td>'+(i+1)+'</td>';
+        html += '<tr'+cls+' onclick="selectSegment('+i+')" style="cursor:pointer">'+'<td>'+(i+1)+'</td>';
         html += '<td>'+Math.round(s.rate)+'</td>';
         html += '<td><input type="number" class="form-control input-sm seg-target" data-seg="'+i+'" value="'+Math.round(s.target)+'" style="width:90px" /></td>';
         html += '<td><input type="number" min="0" class="form-control input-sm seg-hold" data-seg="'+i+'" value="'+Math.round(s.hold/60)+'" style="width:90px" /></td></tr>';
@@ -925,6 +924,9 @@ function exportToCsv(filename, rows) {
 
 $(document).ready(function()
 {
+    // report.html reuses this file's render functions but has no dashboard;
+    // skip the live-dashboard init (websockets, flot) when it isn't present
+    if(!document.getElementById("graph_container")) return;
 
     if(!("WebSocket" in window))
     {
@@ -1072,12 +1074,18 @@ $(document).ready(function()
                     manual_hold = (x.manual_hold === true);
                     updateHoldButton();
 
-                    $("#segment_table").show();
+                    // keep the segment editor populated, but it stays hidden
+                    // behind the "Edit schedule" toggle in the live detail (#3)
                     manageSegmentEditor(x);
 
                     if (graph_start_ms === null) graph_start_ms = Date.now() - x.runtime * 1000;
                     graph.live.data.push([x.runtime, x.temperature]);
-                    graph.plot = $.plot("#graph_container", [ graph.profile, graph.live ] , getOptions());
+                    // flot is the idle/preview graph; while a firing is active the
+                    // unified live detail (canvas) is shown instead, so only replot
+                    // flot when it's actually visible (replotting a hidden/zero-size
+                    // container throws)
+                    if ($("#graph_container").is(":visible"))
+                        graph.plot = $.plot("#graph_container", [ graph.profile, graph.live ] , getOptions());
 
                     setStateWord(manual_hold ? "HOLDING" : "RUNNING", manual_hold ? "holding" : "running");
                     updateProgress(parseFloat(x.runtime) / parseFloat(x.totaltime) * 100);
@@ -1170,6 +1178,7 @@ $(document).ready(function()
                     $('#heat').removeClass('on'); $('#temp_card').removeClass('heating');
                 }
 
+                updateLiveView(x);
                 state_last = state;
 
             }
@@ -1374,6 +1383,10 @@ var histPins = [];        // {x, idx} graph pin hit-targets
 var histRating = null;   // editable notes state for the open firing
 var histEditTags = [];
 var histEditDefects = [];
+var histPhotoPins = [];  // {x, photo} graph camera-marker hit-targets
+var liveRuntime = 0;     // latest firing-clock seconds from /status (for photo capture-time)
+var liveFiringId = null; // active firing's bundle id, while a firing is in progress
+var livePollTimer = null;
 
 function histTU(){ return "°" + (typeof temp_scale_display !== "undefined" ? temp_scale_display : "F"); }
 function histEsc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
@@ -1406,11 +1419,12 @@ var HIST_EV = {
 };
 
 function toggleHistory(){ if($("#history_view").is(":visible")) showLive(); else showHistory(); }
-function showHistory(){ $("#live_view").hide(); $("#history_view").show().removeClass("detail-open"); loadFiringList();
+function showHistory(){ $("#live_view").hide(); $("#live_detail_body").empty(); $("#history_view").show().removeClass("detail-open"); loadFiringList();
   $("#nav_history").html('<span class="glyphicon glyphicon-chevron-left"></span> Live dashboard');
   if(window.history&&history.replaceState) history.replaceState(null,"","#history"); }
-function showLive(){ $("#history_view").hide(); $("#live_view").show(); $(window).trigger("resize");
+function showLive(){ $("#history_view").hide(); $("#live_view").show();
   $("#nav_history").html('<span class="glyphicon glyphicon-time"></span> History');
+  if(liveFiringId){ enterLiveDetail(liveFiringId); } else { $(window).trigger("resize"); }
   if(window.history&&history.replaceState) history.replaceState(null,"",location.pathname+location.search); }
 function histBackToList(){ $("#history_view").removeClass("detail-open"); }
 
@@ -1455,40 +1469,48 @@ function histStat(label,val,unit,accent){
     '<div class="s-val">'+val+(unit?'<span class="u">'+unit+'</span>':'')+'</div></div>';
 }
 
-function renderHistDetail(d){
+function histStatsHtml(s){
+  var peak = s.peak_target!=null?Math.round(s.peak_target):"—";
+  return histStat("Max temp", Math.round(s.max_temp||0), histTU(), true)+
+    histStat("Peak target", peak, histTU())+
+    histStat("Duration", histFmtDur(s.duration_s||0), "");
+}
+
+// target: "#hist_main" (history) or "#live_detail_body" (in-progress firing)
+function renderHistDetail(d, target){
+  target = target || "#hist_main";
+  var live = (target === "#live_detail_body");
   var s=d.summary||{};
   var m=d.metadata||{}; var o=m.outcome||{};
   // a custom title (if set) acts as the firing's display name; the profile name
   // becomes secondary context
   var heading = m.title || d.profile.name;
-  var peak = s.peak_target!=null?Math.round(s.peak_target):"—";
   // seed the editable-notes state for this firing
   histRating = o.rating || null;
   histEditTags = (m.tags||[]).slice();
   histEditDefects = (o.defects||[]).slice();
   var html =
-    '<button type="button" class="hist-back" onclick="histBackToList()"><span class="glyphicon glyphicon-chevron-left"></span> All firings</button>'+
+    (live ? "" : '<button type="button" class="hist-back" onclick="histBackToList()"><span class="glyphicon glyphicon-chevron-left"></span> All firings</button>')+
     '<div class="detail-head">'+
       '<h1 class="dh-title"><span class="pill dh-pill '+(s.status||"")+'">'+(s.status||"")+'</span>'+histEsc(heading)+'</h1>'+
       '<div class="dh-sub tnum"><span>'+histFmtDate(s.started_at)+'</span>'+
       (m.title ? '<span class="dh-subname">'+histEsc(d.profile.name)+'</span>' : '')+
-      (d.imported?'<span class="tag-imported">imported from log</span>':'')+'</div></div>'+
-    '<div class="stats tnum">'+
-      histStat("Max temp", Math.round(s.max_temp||0), histTU(), true)+
-      histStat("Peak target", peak, histTU())+
-      histStat("Duration", histFmtDur(s.duration_s||0), "")+
-    '</div>'+
+      (d.imported?'<span class="tag-imported">imported from log</span>':'')+
+      '<a class="report-link" href="/kiln/report.html?id='+encodeURIComponent(d.id)+'&scale='+(typeof temp_scale!=="undefined"?temp_scale:"f")+'" target="_blank"><span class="glyphicon glyphicon-print"></span> Report</a>'+
+      '</div></div>'+
+    '<div class="stats tnum">'+histStatsHtml(s)+'</div>'+
     '<div class="hist-card"><div class="card-hd"><h3>Planned vs. actual</h3>'+
       '<div class="legend"><span class="lg"><span class="swatch" style="background:var(--heat)"></span>Actual</span>'+
       '<span class="lg"><span class="swatch dash"></span>Planned</span>'+
-      '<span class="lg"><span class="swatch" style="background:var(--danger)"></span>Interruption</span></div></div>'+
+      '<span class="lg"><span class="swatch" style="background:var(--danger)"></span>Interruption</span>'+
+      '<span class="lg">📷 Photo</span></div></div>'+
       '<div class="selcap" id="hist_selcap"></div>'+
       '<div class="graph-wrap"><canvas id="hist_graph"></canvas><div class="hist-tip" id="hist_tip"></div></div></div>'+
     '<div class="lower">'+
       '<div class="hist-card panel-pad"><h2>Event timeline</h2><div class="timeline" id="hist_timeline"></div></div>'+
       '<div class="hist-card panel-pad"><h2>Firing notes</h2>'+renderHistNotes(d)+'</div>'+
     '</div>';
-  $("#hist_main").html(html);
+  $(target).html(html);
   histBuildCurve(d);
   histRenderTimeline(d);
   histDrawGraph();
@@ -1544,24 +1566,68 @@ function histRenderPhotos(){
   var id=encodeURIComponent(histDetail.id);
   var photos=(histDetail.metadata&&histDetail.metadata.photos)||[];
   el.innerHTML = photos.map(function(p){
-    return '<div class="photo-thumb"><img src="/api/firings/'+id+'/photos/'+encodeURIComponent(p.file)+'" alt="firing photo">'+
+    return '<div class="photo-thumb'+(p.note?" has-note":"")+'">'+
+      '<img src="/api/firings/'+id+'/photos/'+encodeURIComponent(p.file)+'" alt="firing photo" onclick="openPhotoLightbox(\''+p.file+'\')">'+
       '<span class="x" title="remove" onclick="histRemovePhoto(\''+p.file+'\')">×</span></div>';
   }).join("")+
   '<label class="photo-add">+ Photo<input type="file" accept="image/*" style="display:none" onchange="histUploadPhoto(this)"></label>';
 }
+function histPhotoRefresh(){   // redraw markers + timeline + grid after a photo change
+  if(!histDetail) return;
+  histBuildCurve(histDetail); histDrawGraph(); histRenderTimeline(histDetail); histRenderPhotos();
+}
 function histUploadPhoto(input){
   if(!input.files||!input.files[0]||!histDetail) return;
+  var isLive = (liveFiringId && histDetail.id===liveFiringId);
+  var rt = isLive ? liveRuntime : null;
   var fd=new FormData(); fd.append("photo", input.files[0]); input.value="";
+  if(rt!=null) fd.append("runtime", rt);
   $.ajax({ url:"/api/firings/"+encodeURIComponent(histDetail.id)+"/photos", type:"POST",
     data:fd, processData:false, contentType:false,
-    success:function(r){ if(r&&r.success){ (histDetail.metadata.photos=histDetail.metadata.photos||[]).push({file:r.file}); histRenderPhotos(); }
+    success:function(r){ if(r&&r.success){
+        var entry={file:r.file, note:""}; if(rt!=null) entry.runtime=rt;
+        (histDetail.metadata.photos=histDetail.metadata.photos||[]).push(entry); histPhotoRefresh(); }
       else { alert((r&&r.error)||"Upload failed"); } },
     error:function(){ alert("Photo upload failed"); } });
 }
 function histRemovePhoto(file){
   if(!histDetail) return;
   $.ajax({ url:"/api/firings/"+encodeURIComponent(histDetail.id)+"/photos/"+encodeURIComponent(file), type:"DELETE",
-    success:function(){ histDetail.metadata.photos=((histDetail.metadata.photos)||[]).filter(function(p){return p.file!==file;}); histRenderPhotos(); } });
+    success:function(){ histDetail.metadata.photos=((histDetail.metadata.photos)||[]).filter(function(p){return p.file!==file;}); histPhotoRefresh(); } });
+}
+
+/* ---- photo lightbox (click to view; edit the per-photo note) ---- */
+function openPhotoLightbox(file){
+  if(!histDetail) return;
+  var p=((histDetail.metadata&&histDetail.metadata.photos)||[]).filter(function(x){return x.file===file;})[0]||{file:file};
+  var lb=document.getElementById("photo_lightbox");
+  if(!lb){ lb=document.createElement("div"); lb.id="photo_lightbox";
+    lb.onclick=function(e){ if(e.target===lb) closePhotoLightbox(); };
+    document.body.appendChild(lb); }
+  var id=encodeURIComponent(histDetail.id);
+  var when=(typeof p.runtime==="number")?('<div class="pl-time">📷 at '+histFmtClock(p.runtime)+' elapsed</div>'):"";
+  lb.innerHTML='<button class="pl-x" onclick="closePhotoLightbox()">×</button>'+
+    '<div class="pl-box">'+
+      '<img class="pl-img" src="/api/firings/'+id+'/photos/'+encodeURIComponent(file)+'">'+when+
+      '<div class="pl-meta"><textarea id="pl_note" placeholder="Add a note for this photo…">'+histEsc(p.note||"")+'</textarea>'+
+      '<button onclick="savePhotoNote(\''+file+'\')">Save</button></div>'+
+    '</div>';
+  lb.classList.add("open");
+  document.addEventListener("keydown", _plEsc);
+}
+function _plEsc(e){ if(e.key==="Escape") closePhotoLightbox(); }
+function closePhotoLightbox(){ var lb=document.getElementById("photo_lightbox"); if(lb) lb.classList.remove("open"); document.removeEventListener("keydown",_plEsc); }
+function savePhotoNote(file){
+  if(!histDetail) return;
+  var ta=document.getElementById("pl_note"); var note=ta?ta.value:"";
+  $.ajax({ url:"/api/firings/"+encodeURIComponent(histDetail.id)+"/photos/"+encodeURIComponent(file), type:"PATCH",
+    contentType:"application/json", data:JSON.stringify({note:note}),
+    success:function(r){ if(r&&r.success){
+        var p=((histDetail.metadata&&histDetail.metadata.photos)||[]).filter(function(x){return x.file===file;})[0];
+        if(p) p.note=r.photo.note;
+        histPhotoRefresh(); closePhotoLightbox();
+      } },
+    error:function(){ alert("Could not save the photo note."); } });
 }
 
 function histSaveNotes(){
@@ -1598,17 +1664,35 @@ function histDeleteFiring(){
 }
 
 function histRenderTimeline(d){
-  var tl=document.getElementById("hist_timeline"); tl.innerHTML="";
-  (d.events||[]).forEach(function(e,i){
-    var def=HIST_EV[e.type]||{c:"var(--muted)",i:"·",t:function(){return [e.type,""];}};
-    var tt=def.t(e), title=tt[0], sub=tt[1];
-    var row=document.createElement("div"); row.className="ev"; row.tabIndex=0;
-    row.setAttribute("data-idx",i); row.setAttribute("data-col",histCssVar(def.c));
-    row.innerHTML='<span class="ev-time tnum">'+histFmtClock(e.runtime||0)+'</span>'+
-      '<span class="ev-ico" style="background:'+def.c+'">'+def.i+'</span>'+
-      '<span class="ev-txt"><b>'+histEsc(title)+'</b>'+(sub?' <span class="ev-sub">— '+histEsc(sub)+'</span>':'')+'</span>';
-    row.onclick=function(){ histSelectEvent(i); };
-    row.onkeydown=function(ev){ if(ev.key==="Enter"||ev.key===" "){ ev.preventDefault(); histSelectEvent(i); } };
+  var tl=document.getElementById("hist_timeline"); if(!tl) return; tl.innerHTML="";
+  var fid=encodeURIComponent(d.id||"");
+  // combine events and (time-stamped) photos, sorted by runtime, so a photo
+  // lands in the timeline at its exact moment
+  var rows=[];
+  (d.events||[]).forEach(function(e,i){ rows.push({kind:"event", rt:e.runtime||0, e:e, idx:i}); });
+  ((d.metadata&&d.metadata.photos)||[]).forEach(function(p){
+    if(typeof p.runtime==="number") rows.push({kind:"photo", rt:p.runtime, p:p});
+  });
+  rows.sort(function(a,b){ return a.rt-b.rt; });
+  rows.forEach(function(r){
+    var row=document.createElement("div"); row.className="ev";
+    if(r.kind==="event"){
+      var def=HIST_EV[r.e.type]||{c:"var(--muted)",i:"·",t:function(){return [r.e.type,""];}};
+      var tt=def.t(r.e), title=tt[0], sub=tt[1];
+      row.tabIndex=0; row.setAttribute("data-idx",r.idx); row.setAttribute("data-col",histCssVar(def.c));
+      row.innerHTML='<span class="ev-time tnum">'+histFmtClock(r.rt)+'</span>'+
+        '<span class="ev-ico" style="background:'+def.c+'">'+def.i+'</span>'+
+        '<span class="ev-txt"><b>'+histEsc(title)+'</b>'+(sub?' <span class="ev-sub">— '+histEsc(sub)+'</span>':'')+'</span>';
+      row.onclick=function(){ histSelectEvent(r.idx); };
+      row.onkeydown=function(ev){ if(ev.key==="Enter"||ev.key===" "){ ev.preventDefault(); histSelectEvent(r.idx); } };
+    } else {
+      var note=r.p.note?(' — '+histEsc(r.p.note)):"";
+      row.innerHTML='<span class="ev-time tnum">'+histFmtClock(r.rt)+'</span>'+
+        '<span class="ev-ico" style="background:#6b7280">📷</span>'+
+        '<span class="ev-txt"><b>Photo</b><span class="ev-sub">'+note+'</span>'+
+        '<img class="ev-thumb" src="/api/firings/'+fid+'/photos/'+encodeURIComponent(r.p.file)+'" '+
+        'onclick="openPhotoLightbox(\''+r.p.file+'\')"></span>';
+    }
     tl.appendChild(row);
   });
 }
@@ -1647,7 +1731,9 @@ function histBuildCurve(d){
   var bands=[], open=null;
   (d.events||[]).forEach(function(e){ if(e.type==="power_interruption") open=e.runtime;
     else if(e.type==="resumed"&&open!=null){ bands.push([open,e.runtime]); open=null; } });
-  histCurve={act:act,plan:plan,xmax:xmax||1,ymax:ymax,events:d.events||[],bands:bands};
+  // photos with a capture runtime become markers on the graph / rows in the timeline
+  var photos=((d.metadata&&d.metadata.photos)||[]).filter(function(p){return typeof p.runtime==="number";});
+  histCurve={act:act,plan:plan,xmax:xmax||1,ymax:ymax,events:d.events||[],bands:bands,photos:photos};
 }
 
 function histDrawGraph(){
@@ -1708,6 +1794,18 @@ function histDrawGraph(){
     var yv=histInterp(histCurve.act, se.runtime||0);
     if(yv!=null){ var py=Y(yv); g.fillStyle="#fff"; g.strokeStyle=col; g.lineWidth=2.5; g.beginPath(); g.arc(sx,py,5.5,0,7); g.fill(); g.stroke(); }
   }
+
+  // photo markers (camera glyph) along the bottom axis, click-to-view
+  histPhotoPins=[];
+  (histCurve.photos||[]).forEach(function(p){
+    var x=X(p.runtime||0);
+    histPhotoPins.push({x:x, photo:p});
+    g.strokeStyle="rgba(107,114,128,.45)"; g.lineWidth=1; g.setLineDash([2,3]);
+    g.beginPath(); g.moveTo(x,m.t); g.lineTo(x,m.t+ph); g.stroke(); g.setLineDash([]);
+    g.font="13px -apple-system,system-ui,sans-serif"; g.textAlign="center"; g.textBaseline="bottom";
+    g.fillText("📷", x, m.t+ph-1);
+  });
+
   histDrawCrosshair();
 }
 
@@ -1746,13 +1844,22 @@ document.addEventListener("mousemove",function(e){
   histHoverX=e.clientX-r.left; histDrawGraph();
 });
 document.addEventListener("click",function(e){
-  var cv=document.getElementById("hist_graph"); if(!cv||!histPins.length) return; var r=cv.getBoundingClientRect();
+  var cv=document.getElementById("hist_graph"); if(!cv) return; var r=cv.getBoundingClientRect();
   if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom) return;
-  var x=e.clientX-r.left, best=null, bd=14;
+  var x=e.clientX-r.left, y=e.clientY-r.top;
+  // bottom band → photo (camera) markers
+  if(y > cv.clientHeight-44 && histPhotoPins.length){
+    var bp=null, bbd=16;
+    histPhotoPins.forEach(function(p){ var dd=Math.abs(p.x-x); if(dd<bbd){ bbd=dd; bp=p; } });
+    if(bp){ openPhotoLightbox(bp.photo.file); return; }
+  }
+  if(!histPins.length) return;
+  var best=null, bd=14;
   histPins.forEach(function(p){ var dd=Math.abs(p.x-x); if(dd<bd){ bd=dd; best=p.idx; } });
   if(best!=null) histSelectFromGraph(best);
 });
-var histRT; window.addEventListener("resize",function(){ if($("#history_view").is(":visible")){ clearTimeout(histRT); histRT=setTimeout(histDrawGraph,80); } });
+var histRT; window.addEventListener("resize",function(){
+  if($("#history_view").is(":visible")||$("#live_detail").is(":visible")){ clearTimeout(histRT); histRT=setTimeout(histDrawGraph,80); } });
 
 /* deep-link: #history opens the history view (bookmarkable; the cloud proxy
    can link straight to it). showHistory/showLive keep the hash in sync. */
@@ -1763,3 +1870,59 @@ $(function(){
     else if($("#history_view").is(":visible")) showLive();
   });
 });
+
+/* =======================================================================
+   In-progress firing: show the same detail view (annotated graph + live
+   timeline + editable notes) for the firing currently being recorded,
+   live-updating by polling /api/firings/<firing_id>. (feature 2 + 3)
+   ======================================================================= */
+function updateLiveView(x){
+  if(typeof x.runtime==="number") liveRuntime=x.runtime;
+  var fid=x.firing_id;
+  if(x.state==="RUNNING" && fid){
+    if($("#live_view").is(":visible")){ $("#live_view > .panel").hide(); $("#live_detail").show(); }
+    if(liveFiringId!==fid){ liveFiringId=fid; enterLiveDetail(fid); }
+  } else if(liveFiringId!==null){
+    liveFiringId=null; exitLiveDetail();
+  }
+}
+function enterLiveDetail(fid){
+  $("#hist_main").empty();   // avoid duplicate element ids if the history view was open
+  $.getJSON("/api/firings/"+encodeURIComponent(fid)+"?resolution=800").done(function(d){
+    histDetail=d; histSel=null; renderHistDetail(d, "#live_detail_body");
+  });
+  if(livePollTimer) clearInterval(livePollTimer);
+  livePollTimer=setInterval(function(){
+    if(liveFiringId!==fid){ clearInterval(livePollTimer); livePollTimer=null; return; }
+    $.getJSON("/api/firings/"+encodeURIComponent(fid)+"?resolution=800").done(histRefreshLive);
+  }, 5000);
+}
+function histRefreshLive(d){
+  // only the live detail; bail if the user navigated to history (its canvas
+  // would otherwise be clobbered) or nothing is loaded
+  if(!liveFiringId || !$("#live_detail").is(":visible")) return;
+  if(!histDetail || histDetail.id!==d.id || !document.getElementById("hist_graph")) return;
+  histDetail.summary=d.summary; histDetail.events=d.events; histDetail.samples=d.samples;
+  // refresh photos from the server only if it has at least as many (so a stale
+  // poll can't drop a photo the user just added locally)
+  if(d.metadata && (d.metadata.photos||[]).length >= ((histDetail.metadata&&histDetail.metadata.photos)||[]).length)
+    histDetail.metadata.photos = d.metadata.photos;
+  $("#live_detail_body .stats").html(histStatsHtml(d.summary));
+  $("#live_detail_body .dh-pill").attr("class","pill dh-pill "+(d.summary.status||"")).text(d.summary.status||"");
+  histBuildCurve(histDetail); histDrawGraph(); histRenderTimeline(histDetail); histUpdateSelCap();
+}
+function exitLiveDetail(){
+  if(livePollTimer){ clearInterval(livePollTimer); livePollTimer=null; }
+  $("#live_seg_wrap").removeClass("open"); $("#btn_edit_sched").removeClass("on"); segments_armed=false;
+  $("#live_detail").hide(); $("#live_detail_body").empty();
+  $("#live_view > .panel").show();
+}
+// "Edit schedule" toggle: reveal the segment editor (hidden by default, #3)
+function toggleLiveSegments(){
+  var open=!$("#live_seg_wrap").hasClass("open");
+  $("#live_seg_wrap").toggleClass("open", open);
+  $("#btn_edit_sched").toggleClass("on", open);
+  segments_armed=open;
+  if(!open) selected_segment=-1;
+  if(typeof applySegmentsEditable==="function") applySegmentsEditable();
+}

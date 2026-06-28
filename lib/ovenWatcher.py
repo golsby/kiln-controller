@@ -141,6 +141,10 @@ class OvenWatcher(threading.Thread):
 
             # surface the watcher alarm to clients without changing oven state
             oven_state['watcher_alarm'] = self.watcher_alarm
+            # expose the active firing's bundle id so the web client can show
+            # the live history detail (annotated graph + timeline + notes)
+            if self.firing is not None:
+                oven_state['firing_id'] = self.firing.id
             self.notify_all(oven_state)
             # Sample/notify at the oven's playback pace so a fast simulation
             # still produces a smooth graph (not ~12 points for a whole run),

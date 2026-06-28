@@ -1,8 +1,31 @@
 # Firing Tracking & History — Design
 
-Status: **in progress** (branch `firing-tracking`)
+Status: **in progress** (branch `firing-tracking`; round 2 on `merge-timeline`)
 Author: Brian Gillespie
-Last updated: 2026-06-27
+Last updated: 2026-06-28
+
+## Round 2 (branch `merge-timeline`)
+
+Brings the history detail to the **live, in-progress firing** and makes photos first-class:
+
+- **Live unified detail.** `/status` now broadcasts `firing_id` (`ovenWatcher`); while a
+  firing runs the dashboard shows the same detail view as history (annotated canvas graph +
+  live event timeline + editable notes) for that firing, polling `/api/firings/<id>` every
+  ~5 s. The flot graph is used only for idle profile preview/editing.
+- **Segments behind Edit.** The live segment editor no longer auto-shows; an "Edit schedule"
+  toggle reveals it (table-driven: tap a row to edit its target/hold via `/control`).
+- **Photos as moments.** Photos taken during a firing carry the capture `runtime` (sent on
+  upload), so they appear as 📷 markers on the graph and as their own rows in the timeline at
+  the exact time slice (single source of truth in `metadata.photos`, not separate events).
+  Click a marker/thumbnail → lightbox with the full image and an editable per-photo **note**.
+- **Layout.** Timeline and notes stack vertically; the timeline grows to show every event
+  (no inner scroll).
+- **Printable report.** `report.html?id=<id>` renders a clean, paper-styled full report
+  (graph, entire timeline, notes, all photos + captions); a Report link sits on the detail.
+
+Backend: photo entries are `{file, runtime, note}`; `PATCH /api/firings/:id/photos/:name`
+sets the note. **Writes to the active firing go through the live `FiringRecorder`** (it owns
+`record.json` in memory) so the watcher's flushes can't clobber notes/photos edited mid-firing.
 
 ## Goal
 

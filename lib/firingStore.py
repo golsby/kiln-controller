@@ -135,6 +135,9 @@ class FiringRecorder(object):
         # events are written from both the watcher thread and the control
         # greenlet (via oven methods), so guard the events file + closed flag
         self._event_lock = threading.Lock()
+        # serializes record.json writes (watcher thread flushes the summary while
+        # the control greenlet may be editing notes/photos on the same bundle)
+        self._record_lock = threading.Lock()
         self._closed = False
         # remember segment so we only rewrite record.json on real progress
         self._last_segment = record["summary"].get("segment")
@@ -213,8 +216,55 @@ class FiringRecorder(object):
         self.close()
         log.info("finalized firing %s as %s" % (self.id, status))
 
-    def _flush_record(self):
+    def _write_record(self):
         _atomic_write_json(os.path.join(self.dirpath, RECORD), self.record)
+
+    def _flush_record(self):
+        with self._record_lock:
+            self._write_record()
+
+    # --- live edits to the active firing (notes/photos) ---------------------
+    # These mutate the in-memory record and flush, so the watcher's own flushes
+    # can't clobber them. Route handlers delegate here when fid is the active
+    # firing; otherwise the disk-based firingStore.* functions are used.
+
+    def update_metadata(self, patch):
+        with self._record_lock:
+            m = _merge_metadata(self.record.setdefault("metadata", _empty_metadata()), patch)
+            self._write_record()
+        return m
+
+    def add_photo(self, upload, runtime=None):
+        name = _save_upload(os.path.join(self.dirpath, "photos"), upload)
+        if name is None:
+            return None
+        if runtime is None:
+            runtime = self._last_runtime
+        with self._record_lock:
+            self.record.setdefault("metadata", _empty_metadata()).setdefault("photos", []).append(
+                _photo_entry(name, runtime))
+            self._write_record()
+        return name
+
+    def update_photo(self, name, patch):
+        with self._record_lock:
+            photos = self.record.setdefault("metadata", _empty_metadata()).setdefault("photos", [])
+            p = _merge_photo(photos, name, patch)
+            if p is not None:
+                self._write_record()
+        return p
+
+    def delete_photo(self, name):
+        if os.path.basename(name) != name:
+            return False
+        fpath = os.path.join(self.dirpath, "photos", name)
+        if os.path.isfile(fpath):
+            os.remove(fpath)
+        with self._record_lock:
+            photos = self.record.get("metadata", {}).get("photos", [])
+            self.record["metadata"]["photos"] = [p for p in photos if p.get("file") != name]
+            self._write_record()
+        return True
 
     def close(self):
         with self._event_lock:
@@ -487,18 +537,11 @@ def _clean_str(v, limit):
     return str(v if v is not None else "")[:limit]
 
 
-def update_metadata(firings_dir, fid, patch):
-    '''Merge an edit into a firing's user metadata and persist it. Only the
-    user-owned fields are touched (title, tags, outcome); samples/events/profile
-    and the photo list are left alone. Returns the new metadata, or None if the
-    firing is unknown.'''
-    dirpath = _bundle_dir(firings_dir, fid)
-    if dirpath is None:
-        return None
-    rec = _read_record(dirpath)
-    if rec is None:
-        return None
-    m = rec.setdefault("metadata", _empty_metadata())
+# --- pure helpers shared by the disk functions and the live FiringRecorder ---
+
+def _merge_metadata(m, patch):
+    '''Merge a user-metadata patch into metadata dict `m` in place (title, tags,
+    outcome only); returns m.'''
     if isinstance(patch, dict):
         if "title" in patch:
             m["title"] = _clean_str(patch["title"], 200)
@@ -517,6 +560,58 @@ def update_metadata(firings_dir, fid, patch):
                 o["summary"] = _clean_str(po["summary"], 5000)
             if isinstance(po.get("defects"), list):
                 o["defects"] = [_clean_str(d, 40) for d in po["defects"] if str(d).strip()][:30]
+    return m
+
+
+def _photo_entry(name, runtime=None):
+    '''A photo metadata entry. `runtime` (firing-clock seconds) places it on the
+    timeline/graph; None for photos added outside a firing.'''
+    e = {"file": name, "note": ""}
+    if isinstance(runtime, (int, float)):
+        e["runtime"] = round(runtime, 1)
+    return e
+
+
+def _merge_photo(photos, name, patch):
+    '''Merge note/runtime into the matching photo entry; returns it or None.'''
+    for p in photos:
+        if p.get("file") == name:
+            if "note" in patch:
+                p["note"] = _clean_str(patch.get("note"), 500)
+            if "runtime" in patch:
+                rt = patch["runtime"]
+                p["runtime"] = round(rt, 1) if isinstance(rt, (int, float)) else None
+            return p
+    return None
+
+
+def _save_upload(photos_dir, upload):
+    '''Save a bottle FileUpload under a server-chosen, collision-free name.
+    Returns the filename, or None if the type isn't an allowed image.'''
+    ext = os.path.splitext(getattr(upload, "raw_filename", "") or getattr(upload, "filename", "") or "")[1].lower()
+    if ext not in PHOTO_EXTS:
+        return None
+    if not os.path.isdir(photos_dir):
+        os.makedirs(photos_dir)
+    n = 1
+    while os.path.exists(os.path.join(photos_dir, "photo-%d%s" % (n, ext))):
+        n += 1
+    name = "photo-%d%s" % (n, ext)
+    upload.save(os.path.join(photos_dir, name))
+    return name
+
+
+def update_metadata(firings_dir, fid, patch):
+    '''Merge an edit into a firing's user metadata and persist it (disk path,
+    for firings that are NOT currently recording). Returns the new metadata, or
+    None if the firing is unknown.'''
+    dirpath = _bundle_dir(firings_dir, fid)
+    if dirpath is None:
+        return None
+    rec = _read_record(dirpath)
+    if rec is None:
+        return None
+    m = _merge_metadata(rec.setdefault("metadata", _empty_metadata()), patch)
     _atomic_write_json(os.path.join(dirpath, RECORD), rec)
     log.info("updated metadata for firing %s" % fid)
     return m
@@ -533,31 +628,38 @@ def delete_firing(firings_dir, fid):
     return True
 
 
-def add_photo(firings_dir, fid, upload):
+def add_photo(firings_dir, fid, upload, runtime=None):
     '''Save an uploaded photo into the bundle's photos/ dir and register it in
-    metadata. `upload` is a bottle FileUpload. Returns the stored filename, or
-    None on failure/unknown firing.'''
+    metadata (disk path). `upload` is a bottle FileUpload; `runtime` places it on
+    the timeline/graph. Returns the stored filename, or None on failure.'''
     dirpath = _bundle_dir(firings_dir, fid)
     if dirpath is None:
         return None
-    ext = os.path.splitext(upload.raw_filename or "")[1].lower()
-    if ext not in PHOTO_EXTS:
+    name = _save_upload(os.path.join(dirpath, "photos"), upload)
+    if name is None:
         return None
-    photos_dir = os.path.join(dirpath, "photos")
-    if not os.path.isdir(photos_dir):
-        os.makedirs(photos_dir)
-    # stable, collision-free name; never trust the client filename
-    n = 1
-    while os.path.exists(os.path.join(photos_dir, "photo-%d%s" % (n, ext))):
-        n += 1
-    name = "photo-%d%s" % (n, ext)
-    upload.save(os.path.join(photos_dir, name))
     rec = _read_record(dirpath)
     if rec is not None:
-        rec.setdefault("metadata", _empty_metadata()).setdefault("photos", []).append({"file": name})
+        rec.setdefault("metadata", _empty_metadata()).setdefault("photos", []).append(
+            _photo_entry(name, runtime))
         _atomic_write_json(os.path.join(dirpath, RECORD), rec)
     log.info("added photo %s to firing %s" % (name, fid))
     return name
+
+
+def update_photo(firings_dir, fid, name, patch):
+    '''Set a photo's note/runtime (disk path). Returns the photo entry or None.'''
+    dirpath = _bundle_dir(firings_dir, fid)
+    if dirpath is None or os.path.basename(name) != name:
+        return None
+    rec = _read_record(dirpath)
+    if rec is None:
+        return None
+    photos = rec.setdefault("metadata", _empty_metadata()).setdefault("photos", [])
+    p = _merge_photo(photos, name, patch)
+    if p is not None:
+        _atomic_write_json(os.path.join(dirpath, RECORD), rec)
+    return p
 
 
 def delete_photo(firings_dir, fid, name):
