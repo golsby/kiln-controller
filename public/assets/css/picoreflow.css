@@ -549,6 +549,12 @@ body {
     }
 }
 
+/* top bar: controller name + the History/Live toggle grouped as one compact
+   unit on the left, so the button never becomes a stranded right-hand column
+   (irritating on desktop) or its own tall strip (wasteful on mobile) */
+#controller_header { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+#controller_header #controller_name { line-height:1.2; }
+
 /* =========================================================================
    Firing history view (reuses the dashboard tokens from :root above).
    Everything is scoped under #history_view so it never collides with the
