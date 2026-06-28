@@ -601,8 +601,8 @@ body {
 #history_view .dh-sub { color:var(--muted); font-size:13px; margin-top:5px; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
 #history_view .dh-right { margin-left:auto; }
 
-/* one segmented card holding all the stats (not five separate cards) */
-#history_view .stats { display:grid; grid-template-columns:repeat(5,1fr);
+/* one segmented card holding all the stats (not separate cards) */
+#history_view .stats { display:grid; grid-template-columns:repeat(3,1fr);
     background:var(--card); border:1px solid var(--line); border-radius:14px; box-shadow:var(--shadow); overflow:hidden; }
 #history_view .stat { padding:13px 16px; border-left:1px solid var(--line); }
 #history_view .stat:first-child { border-left:none; }

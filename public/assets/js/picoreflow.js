@@ -1465,8 +1465,6 @@ function renderHistDetail(d){
       histStat("Max temp", Math.round(s.max_temp||0), histTU(), true)+
       histStat("Peak target", peak, histTU())+
       histStat("Duration", histFmtDur(s.duration_s||0), "")+
-      histStat("Samples", (d.sample_count||0).toLocaleString(), "")+
-      histStat("Events", (d.events||[]).length, "")+
     '</div>'+
     '<div class="hist-card"><div class="card-hd"><h3>Planned vs. actual</h3>'+
       '<div class="legend"><span class="lg"><span class="swatch" style="background:var(--heat)"></span>Actual</span>'+
