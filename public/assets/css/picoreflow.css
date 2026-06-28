@@ -596,10 +596,11 @@ body {
 #history_view .pill.error { color:#b3261e; background:rgba(255,59,48,.12); }
 #history_view .tag-imported { font-size:11px; font-weight:600; color:var(--muted); background:#f1f3f7; border:1px solid var(--line); padding:2px 8px; border-radius:999px; }
 
-#history_view .detail-head { display:flex; align-items:flex-start; gap:14px; flex-wrap:wrap; }
-#history_view .dh-title { font-size:24px; font-weight:700; letter-spacing:-.02em; line-height:1.1; margin:0; }
+#history_view .dh-title { font-size:24px; font-weight:700; letter-spacing:-.02em; line-height:1.15; margin:0; display:flow-root; }
+/* status chip floats to the top-right of the title; the title text wraps
+   around it, so on a narrow screen it sits beside the title, not on its own line */
+#history_view .dh-pill { float:right; margin:2px 0 6px 12px; }
 #history_view .dh-sub { color:var(--muted); font-size:13px; margin-top:5px; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
-#history_view .dh-right { margin-left:auto; }
 
 /* one segmented card holding all the stats (not separate cards) */
 #history_view .stats { display:grid; grid-template-columns:repeat(3,1fr);

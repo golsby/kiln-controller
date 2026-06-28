@@ -1457,10 +1457,10 @@ function renderHistDetail(d){
   var peak = s.peak_target!=null?Math.round(s.peak_target):"—";
   var html =
     '<button type="button" class="hist-back" onclick="histBackToList()"><span class="glyphicon glyphicon-chevron-left"></span> All firings</button>'+
-    '<div class="detail-head"><div><h1 class="dh-title">'+histEsc(d.profile.name)+'</h1>'+
+    '<div class="detail-head">'+
+      '<h1 class="dh-title"><span class="pill dh-pill '+(s.status||"")+'">'+(s.status||"")+'</span>'+histEsc(d.profile.name)+'</h1>'+
       '<div class="dh-sub tnum"><span>'+histFmtDate(s.started_at)+'</span>'+
       (d.imported?'<span class="tag-imported">imported from log</span>':'')+'</div></div>'+
-      '<div class="dh-right"><span class="pill '+(s.status||"")+'">'+(s.status||"")+'</span></div></div>'+
     '<div class="stats tnum">'+
       histStat("Max temp", Math.round(s.max_temp||0), histTU(), true)+
       histStat("Peak target", peak, histTU())+
