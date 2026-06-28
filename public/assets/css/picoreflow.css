@@ -620,7 +620,9 @@ body {
 .hist-scope .legend .swatch { width:16px; height:3px; border-radius:2px; display:inline-block; }
 .hist-scope .legend .swatch.dash { height:0; border-top:2px dashed var(--info); }
 
-.hist-scope .selcap { display:flex; align-items:center; gap:8px; padding:6px 18px 0; font-size:13px; min-height:24px; }
+/* fixed height so swapping the tip text for the selected-event caption (which
+   includes a taller "clear" button) doesn't reflow and nudge the graph down */
+.hist-scope .selcap { display:flex; align-items:center; gap:8px; padding:2px 18px 0; font-size:13px; height:34px; box-sizing:border-box; }
 .hist-scope .selcap .muted { color:var(--muted); }
 .hist-scope .selcap .seldot { width:9px; height:9px; border-radius:50%; display:inline-block; flex:0 0 auto; }
 .hist-scope .selcap b { font-weight:600; }
