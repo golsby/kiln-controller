@@ -554,6 +554,7 @@ body {
    (irritating on desktop) or its own tall strip (wasteful on mobile) */
 #controller_header { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
 #controller_header #controller_name { line-height:1.2; }
+#controller_header #nav_history { margin-left:auto; }   /* right-aligned, sharing the name's row (not its own strip) */
 
 /* =========================================================================
    Firing history view (reuses the dashboard tokens from :root above).
@@ -600,8 +601,11 @@ body {
 #history_view .dh-sub { color:var(--muted); font-size:13px; margin-top:5px; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
 #history_view .dh-right { margin-left:auto; }
 
-#history_view .stats { display:grid; grid-template-columns:repeat(5,1fr); gap:12px; }
-#history_view .stat { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:13px 15px; box-shadow:var(--shadow); }
+/* one segmented card holding all the stats (not five separate cards) */
+#history_view .stats { display:grid; grid-template-columns:repeat(5,1fr);
+    background:var(--card); border:1px solid var(--line); border-radius:14px; box-shadow:var(--shadow); overflow:hidden; }
+#history_view .stat { padding:13px 16px; border-left:1px solid var(--line); }
+#history_view .stat:first-child { border-left:none; }
 #history_view .s-label { font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); font-weight:600; }
 #history_view .s-val { font-size:22px; font-weight:700; letter-spacing:-.01em; margin-top:4px; line-height:1; }
 #history_view .s-val .u { font-size:13px; font-weight:600; color:var(--muted); margin-left:2px; }
@@ -666,7 +670,13 @@ body {
     #history_view.detail-open .hist-rail { display:none; }
     #history_view.detail-open .hist-main { display:flex; }
     #history_view .hist-back { display:inline-flex; }
-    #history_view .stats { grid-template-columns:repeat(2,1fr); }
+    /* stats: compact 3-up grid in the one card, with grid-line dividers */
+    #history_view .stats { grid-template-columns:repeat(3,1fr); }
+    #history_view .stat { padding:9px 11px; border-top:1px solid var(--line); }
+    #history_view .stat:nth-child(-n+3) { border-top:none; }   /* first row */
+    #history_view .stat:nth-child(3n+1) { border-left:none; }  /* first column */
+    #history_view .s-val { font-size:18px; }
+    #history_view .s-label { font-size:10px; letter-spacing:.04em; }
     #history_view .lower { grid-template-columns:1fr; }
     #history_view .dh-title { font-size:21px; }
 }
