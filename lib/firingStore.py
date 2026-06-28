@@ -418,7 +418,7 @@ def _downsample(rows, maxpts):
     '''Thin rows to about maxpts points, always keeping the last one so the end
     of the firing is shown.'''
     n = len(rows)
-    if not maxpts or n <= maxpts:
+    if not maxpts or maxpts < 2 or n <= maxpts:
         return rows
     every = max(1, int(n / (maxpts - 1)))
     out = rows[::every]
@@ -474,3 +474,112 @@ def get_firing(firings_dir, fid, resolution=None):
     rec["sample_count"] = len(samples)
     rec["samples"] = _downsample(samples, resolution)
     return rec
+
+
+# ---------------------------------------------------------------------------
+# write side: user metadata, photos, delete (the editable surface)
+# ---------------------------------------------------------------------------
+
+PHOTO_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".heic"}
+
+
+def _clean_str(v, limit):
+    return str(v if v is not None else "")[:limit]
+
+
+def update_metadata(firings_dir, fid, patch):
+    '''Merge an edit into a firing's user metadata and persist it. Only the
+    user-owned fields are touched (title, tags, outcome); samples/events/profile
+    and the photo list are left alone. Returns the new metadata, or None if the
+    firing is unknown.'''
+    dirpath = _bundle_dir(firings_dir, fid)
+    if dirpath is None:
+        return None
+    rec = _read_record(dirpath)
+    if rec is None:
+        return None
+    m = rec.setdefault("metadata", _empty_metadata())
+    if isinstance(patch, dict):
+        if "title" in patch:
+            m["title"] = _clean_str(patch["title"], 200)
+        if isinstance(patch.get("tags"), list):
+            m["tags"] = [_clean_str(t, 40) for t in patch["tags"] if str(t).strip()][:30]
+        if isinstance(patch.get("outcome"), dict):
+            o = m.setdefault("outcome", {})
+            po = patch["outcome"]
+            if "rating" in po:
+                try:
+                    r = int(po["rating"])
+                    o["rating"] = r if 1 <= r <= 5 else None
+                except (TypeError, ValueError):
+                    o["rating"] = None
+            if "summary" in po:
+                o["summary"] = _clean_str(po["summary"], 5000)
+            if isinstance(po.get("defects"), list):
+                o["defects"] = [_clean_str(d, 40) for d in po["defects"] if str(d).strip()][:30]
+    _atomic_write_json(os.path.join(dirpath, RECORD), rec)
+    log.info("updated metadata for firing %s" % fid)
+    return m
+
+
+def delete_firing(firings_dir, fid):
+    '''Delete a firing bundle and everything in it. Returns True on success.'''
+    dirpath = _bundle_dir(firings_dir, fid)
+    if dirpath is None:
+        return False
+    import shutil
+    shutil.rmtree(dirpath)
+    log.info("deleted firing %s" % fid)
+    return True
+
+
+def add_photo(firings_dir, fid, upload):
+    '''Save an uploaded photo into the bundle's photos/ dir and register it in
+    metadata. `upload` is a bottle FileUpload. Returns the stored filename, or
+    None on failure/unknown firing.'''
+    dirpath = _bundle_dir(firings_dir, fid)
+    if dirpath is None:
+        return None
+    ext = os.path.splitext(upload.raw_filename or "")[1].lower()
+    if ext not in PHOTO_EXTS:
+        return None
+    photos_dir = os.path.join(dirpath, "photos")
+    if not os.path.isdir(photos_dir):
+        os.makedirs(photos_dir)
+    # stable, collision-free name; never trust the client filename
+    n = 1
+    while os.path.exists(os.path.join(photos_dir, "photo-%d%s" % (n, ext))):
+        n += 1
+    name = "photo-%d%s" % (n, ext)
+    upload.save(os.path.join(photos_dir, name))
+    rec = _read_record(dirpath)
+    if rec is not None:
+        rec.setdefault("metadata", _empty_metadata()).setdefault("photos", []).append({"file": name})
+        _atomic_write_json(os.path.join(dirpath, RECORD), rec)
+    log.info("added photo %s to firing %s" % (name, fid))
+    return name
+
+
+def delete_photo(firings_dir, fid, name):
+    '''Remove one photo file and its metadata entry. Returns True on success.'''
+    dirpath = _bundle_dir(firings_dir, fid)
+    if dirpath is None or os.path.basename(name) != name:
+        return False
+    fpath = os.path.join(dirpath, "photos", name)
+    if os.path.isfile(fpath):
+        os.remove(fpath)
+    rec = _read_record(dirpath)
+    if rec is not None:
+        photos = rec.get("metadata", {}).get("photos", [])
+        rec["metadata"]["photos"] = [p for p in photos if p.get("file") != name]
+        _atomic_write_json(os.path.join(dirpath, RECORD), rec)
+    return True
+
+
+def photo_fullpath(firings_dir, fid, name):
+    '''Resolve a photo to an on-disk path for serving, or None if invalid.'''
+    dirpath = _bundle_dir(firings_dir, fid)
+    if dirpath is None or os.path.basename(name) != name:
+        return None
+    fpath = os.path.join(dirpath, "photos", name)
+    return fpath if os.path.isfile(fpath) else None

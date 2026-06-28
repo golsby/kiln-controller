@@ -1371,6 +1371,9 @@ var histDetail = null;   // currently loaded full record
 var histCurve = null;    // {act, plan, events, bands, xmax, ymax}
 var histSel = null;      // selected event index (links list <-> graph)
 var histPins = [];        // {x, idx} graph pin hit-targets
+var histRating = null;   // editable notes state for the open firing
+var histEditTags = [];
+var histEditDefects = [];
 
 function histTU(){ return "°" + (typeof temp_scale_display !== "undefined" ? temp_scale_display : "F"); }
 function histEsc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
@@ -1431,7 +1434,7 @@ function renderHistList(selId){
     html += '<button type="button" class="firing-card'+(f.id===selId?" sel":"")+'" onclick="loadFiring(\''+f.id+'\')">'+
       '<div class="fc-top"><span class="fc-date tnum">'+histFmtDate(s.started_at)+'</span>'+
       '<span class="pill '+(s.status||"")+'">'+(s.status||"")+'</span></div>'+
-      '<div class="fc-name">'+histEsc(f.profile_name||"—")+'</div>'+
+      '<div class="fc-name">'+histEsc(f.title||f.profile_name||"—")+'</div>'+
       '<div class="fc-meta tnum"><span><b>'+Math.round(s.max_temp||0)+'</b>'+histTU()+'</span>'+
       '<span><b>'+histFmtDur(s.duration_s||0)+'</b></span></div></button>';
   });
@@ -1454,12 +1457,21 @@ function histStat(label,val,unit,accent){
 
 function renderHistDetail(d){
   var s=d.summary||{};
+  var m=d.metadata||{}; var o=m.outcome||{};
+  // a custom title (if set) acts as the firing's display name; the profile name
+  // becomes secondary context
+  var heading = m.title || d.profile.name;
   var peak = s.peak_target!=null?Math.round(s.peak_target):"—";
+  // seed the editable-notes state for this firing
+  histRating = o.rating || null;
+  histEditTags = (m.tags||[]).slice();
+  histEditDefects = (o.defects||[]).slice();
   var html =
     '<button type="button" class="hist-back" onclick="histBackToList()"><span class="glyphicon glyphicon-chevron-left"></span> All firings</button>'+
     '<div class="detail-head">'+
-      '<h1 class="dh-title"><span class="pill dh-pill '+(s.status||"")+'">'+(s.status||"")+'</span>'+histEsc(d.profile.name)+'</h1>'+
+      '<h1 class="dh-title"><span class="pill dh-pill '+(s.status||"")+'">'+(s.status||"")+'</span>'+histEsc(heading)+'</h1>'+
       '<div class="dh-sub tnum"><span>'+histFmtDate(s.started_at)+'</span>'+
+      (m.title ? '<span class="dh-subname">'+histEsc(d.profile.name)+'</span>' : '')+
       (d.imported?'<span class="tag-imported">imported from log</span>':'')+'</div></div>'+
     '<div class="stats tnum">'+
       histStat("Max temp", Math.round(s.max_temp||0), histTU(), true)+
@@ -1474,29 +1486,115 @@ function renderHistDetail(d){
       '<div class="graph-wrap"><canvas id="hist_graph"></canvas><div class="hist-tip" id="hist_tip"></div></div></div>'+
     '<div class="lower">'+
       '<div class="hist-card panel-pad"><h2>Event timeline</h2><div class="timeline" id="hist_timeline"></div></div>'+
-      '<div class="hist-card panel-pad"><h2>Firing notes</h2><div class="notes-ro">'+renderHistNotes(d.metadata)+'</div></div>'+
+      '<div class="hist-card panel-pad"><h2>Firing notes</h2>'+renderHistNotes(d)+'</div>'+
     '</div>';
   $("#hist_main").html(html);
   histBuildCurve(d);
   histRenderTimeline(d);
   histDrawGraph();
   histUpdateSelCap();
+  histRenderStars(); histRenderTags(); histRenderDefects(); histRenderPhotos();
 }
 
-function renderHistNotes(m){
-  m=m||{}; var o=m.outcome||{};
-  var has = m.title || (m.tags&&m.tags.length) || (o.rating) || o.summary || (o.defects&&o.defects.length);
-  if(!has) return '<div class="notes-empty">No notes recorded yet. (Adding titles, tags, ratings and photos comes next.)</div>';
-  function nr(l,v){ return '<div class="nr"><label>'+l+'</label><div class="val">'+v+'</div></div>'; }
-  function chips(a){ return '<div class="chips">'+a.map(function(x){return '<span class="chip">'+histEsc(x)+'</span>';}).join("")+'</div>'; }
-  function stars(n){ var h=""; for(var i=1;i<=5;i++) h+='<span class="'+(i<=n?"on":"")+'">★</span>'; return '<span class="stars">'+h+'</span>'; }
-  var html="";
-  if(m.title) html+=nr("Title", histEsc(m.title));
-  if(o.rating) html+=nr("Rating", stars(o.rating));
-  if(m.tags&&m.tags.length) html+=nr("Tags", chips(m.tags));
-  if(o.summary) html+=nr("What happened", histEsc(o.summary));
-  if(o.defects&&o.defects.length) html+=nr("Defects", chips(o.defects));
-  return html;
+function renderHistNotes(d){
+  var m=d.metadata||{}; var o=m.outcome||{};
+  return '<div class="notes">'+
+    '<div class="nf"><label>Title</label><input id="nf_title" class="nf-input" maxlength="200" placeholder="e.g. Blue cast — 3 pieces" value="'+histEsc(m.title||"")+'"></div>'+
+    '<div class="nf-row">'+
+      '<div class="nf"><label>Rating</label><div class="stars" id="nf_stars"></div></div>'+
+      '<div class="nf"><label>Tags</label><div class="chips" id="nf_tags"></div></div>'+
+    '</div>'+
+    '<div class="nf"><label>What happened</label><textarea id="nf_summary" class="nf-area" maxlength="5000" placeholder="Outcome, observations…">'+histEsc(o.summary||"")+'</textarea></div>'+
+    '<div class="nf"><label>Defects</label><div class="chips" id="nf_defects"></div></div>'+
+    '<div class="nf"><label>Photos</label><div class="photo-grid" id="nf_photos"></div></div>'+
+    '<div class="nf-actions"><button type="button" class="btn-save" onclick="histSaveNotes()">Save notes</button>'+
+      '<span class="nf-hint" id="nf_saved"></span>'+
+      '<button type="button" class="btn-del" onclick="histDeleteFiring()">Delete firing</button></div>'+
+  '</div>';
+}
+
+function histRenderStars(){
+  var el=document.getElementById("nf_stars"); if(!el) return;
+  var h=""; for(var i=1;i<=5;i++) h+='<span data-n="'+i+'" onclick="histSetRating('+i+')" class="'+(histRating&&i<=histRating?"on":"")+'">★</span>';
+  el.innerHTML=h;
+}
+function histSetRating(n){ histRating=(histRating===n?null:n); histRenderStars(); }
+
+function histRenderTags(){
+  var el=document.getElementById("nf_tags"); if(!el) return;
+  el.innerHTML = histEditTags.map(function(t,i){ return '<span class="chip">'+histEsc(t)+'<span class="x" onclick="histRemoveTag('+i+')">×</span></span>'; }).join("")+
+    '<input class="chip-input" id="nf_tag_input" placeholder="add tag" onkeydown="histChipKey(event,\'tag\')">';
+}
+function histRenderDefects(){
+  var el=document.getElementById("nf_defects"); if(!el) return;
+  el.innerHTML = histEditDefects.map(function(t,i){ return '<span class="chip defect">'+histEsc(t)+'<span class="x" onclick="histRemoveDefect('+i+')">×</span></span>'; }).join("")+
+    '<input class="chip-input" id="nf_defect_input" placeholder="add defect" onkeydown="histChipKey(event,\'defect\')">';
+}
+function histChipKey(e, kind){
+  if(e.key!=="Enter") return;
+  e.preventDefault(); var v=e.target.value.trim(); if(!v) return;
+  if(kind==="tag"){ histEditTags.push(v); histRenderTags(); var i=document.getElementById("nf_tag_input"); if(i) i.focus(); }
+  else { histEditDefects.push(v); histRenderDefects(); var j=document.getElementById("nf_defect_input"); if(j) j.focus(); }
+}
+function histRemoveTag(i){ histEditTags.splice(i,1); histRenderTags(); }
+function histRemoveDefect(i){ histEditDefects.splice(i,1); histRenderDefects(); }
+
+function histRenderPhotos(){
+  var el=document.getElementById("nf_photos"); if(!el||!histDetail) return;
+  var id=encodeURIComponent(histDetail.id);
+  var photos=(histDetail.metadata&&histDetail.metadata.photos)||[];
+  el.innerHTML = photos.map(function(p){
+    return '<div class="photo-thumb"><img src="/api/firings/'+id+'/photos/'+encodeURIComponent(p.file)+'" alt="firing photo">'+
+      '<span class="x" title="remove" onclick="histRemovePhoto(\''+p.file+'\')">×</span></div>';
+  }).join("")+
+  '<label class="photo-add">+ Photo<input type="file" accept="image/*" style="display:none" onchange="histUploadPhoto(this)"></label>';
+}
+function histUploadPhoto(input){
+  if(!input.files||!input.files[0]||!histDetail) return;
+  var fd=new FormData(); fd.append("photo", input.files[0]); input.value="";
+  $.ajax({ url:"/api/firings/"+encodeURIComponent(histDetail.id)+"/photos", type:"POST",
+    data:fd, processData:false, contentType:false,
+    success:function(r){ if(r&&r.success){ (histDetail.metadata.photos=histDetail.metadata.photos||[]).push({file:r.file}); histRenderPhotos(); }
+      else { alert((r&&r.error)||"Upload failed"); } },
+    error:function(){ alert("Photo upload failed"); } });
+}
+function histRemovePhoto(file){
+  if(!histDetail) return;
+  $.ajax({ url:"/api/firings/"+encodeURIComponent(histDetail.id)+"/photos/"+encodeURIComponent(file), type:"DELETE",
+    success:function(){ histDetail.metadata.photos=((histDetail.metadata.photos)||[]).filter(function(p){return p.file!==file;}); histRenderPhotos(); } });
+}
+
+function histSaveNotes(){
+  if(!histDetail) return;
+  var patch={ title: document.getElementById("nf_title").value,
+    tags: histEditTags,
+    outcome: { rating: histRating, summary: document.getElementById("nf_summary").value, defects: histEditDefects } };
+  $.ajax({ url:"/api/firings/"+encodeURIComponent(histDetail.id), type:"PATCH",
+    contentType:"application/json", data:JSON.stringify(patch),
+    success:function(r){
+      if(r&&r.success){ histDetail.metadata=r.metadata;
+        // reflect a (possibly new) title in the list rail + detail heading
+        var it=(histList||[]).filter(function(f){return f.id===histDetail.id;})[0]; if(it) it.title=r.metadata.title;
+        renderHistList(histDetail.id);
+        renderHistDetail(histDetail);
+        $("#nf_saved").text("Saved ✓"); setTimeout(function(){ $("#nf_saved").text(""); }, 2500);
+      } else { $("#nf_saved").css("color","var(--danger)").text((r&&r.error)||"Save failed"); }
+    },
+    error:function(){ $("#nf_saved").css("color","var(--danger)").text("Save failed"); } });
+}
+
+function histDeleteFiring(){
+  if(!histDetail) return;
+  if(!confirm("Delete this firing permanently? Its data and photos will be removed and this cannot be undone.")) return;
+  var id=histDetail.id;
+  $.ajax({ url:"/api/firings/"+encodeURIComponent(id), type:"DELETE",
+    success:function(){
+      histList=(histList||[]).filter(function(f){return f.id!==id;}); histDetail=null;
+      $("#history_view").removeClass("detail-open");
+      if(histList.length){ renderHistList(null); if(window.innerWidth>900) loadFiring(histList[0].id); else $("#hist_main").html(""); }
+      else { $("#hist_list").html(""); $("#hist_main").html('<div class="hist-empty">No firings recorded yet.</div>'); }
+    },
+    error:function(){ alert("Could not delete the firing."); } });
 }
 
 function histRenderTimeline(d){

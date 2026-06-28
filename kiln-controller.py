@@ -59,6 +59,8 @@ import firingStore
 controller = identity.load_or_create(config.controller_state_file)
 
 app = bottle.Bottle()
+# allow multi-MB photo uploads (default cap is ~100KB and would truncate them)
+bottle.BaseRequest.MEMFILE_MAX = 20 * 1024 * 1024
 
 if config.simulate == True:
     log.info("this is a simulation")
@@ -104,6 +106,58 @@ def handle_get_firing(fid):
         bottle.response.status = 404
         return json.dumps({"error": "firing not found"})
     return json.dumps(data)
+
+
+@app.route('/api/firings/<fid>', method='PATCH')
+def handle_update_firing(fid):
+    '''Edit a firing's user metadata (title, tags, rating, summary, defects).'''
+    bottle.response.content_type = 'application/json'
+    meta = firingStore.update_metadata(config.firings_directory, fid, bottle.request.json or {})
+    if meta is None:
+        bottle.response.status = 404
+        return json.dumps({"error": "firing not found"})
+    return json.dumps({"success": True, "metadata": meta})
+
+
+@app.route('/api/firings/<fid>', method='DELETE')
+def handle_delete_firing(fid):
+    bottle.response.content_type = 'application/json'
+    if not firingStore.delete_firing(config.firings_directory, fid):
+        bottle.response.status = 404
+        return json.dumps({"error": "firing not found"})
+    return json.dumps({"success": True})
+
+
+@app.route('/api/firings/<fid>/photos', method='POST')
+def handle_add_photo(fid):
+    bottle.response.content_type = 'application/json'
+    upload = bottle.request.files.get('photo')
+    if upload is None:
+        bottle.response.status = 400
+        return json.dumps({"error": "no photo in request"})
+    name = firingStore.add_photo(config.firings_directory, fid, upload)
+    if name is None:
+        bottle.response.status = 400
+        return json.dumps({"error": "unsupported image type or unknown firing"})
+    return json.dumps({"success": True, "file": name})
+
+
+@app.route('/api/firings/<fid>/photos/<name>', method='DELETE')
+def handle_delete_photo(fid, name):
+    bottle.response.content_type = 'application/json'
+    firingStore.delete_photo(config.firings_directory, fid, name)
+    return json.dumps({"success": True})
+
+
+@app.get('/api/firings/<fid>/photos/<name>')
+def handle_get_photo(fid, name):
+    path = firingStore.photo_fullpath(config.firings_directory, fid, name)
+    if path is None:
+        bottle.response.status = 404
+        return "not found"
+    resp = bottle.static_file(os.path.basename(path), root=os.path.dirname(path))
+    resp.set_header("Cache-Control", "max-age=31536000")  # photos are immutable once uploaded
+    return resp
 
 
 @app.post('/api')
