@@ -110,6 +110,7 @@
     </div>
    </div>
    <div class="panel-body">
+    <div id="mru_firings"></div>
     <div id="graph_container" class="graph"></div>
    </div>
    <div id="profile_table" class="panel-footer" style="display:none;"></div>
@@ -118,10 +119,6 @@
   <!-- in-progress firing: the same detail view as history (annotated graph +
        live timeline + editable notes), shown while a firing is active -->
   <div id="live_detail" class="hist-scope" style="display:none">
-   <div class="live-editbar">
-    <button type="button" class="btn-edit-sched" id="btn_edit_sched" onclick="toggleLiveSegments()"><span class="glyphicon glyphicon-edit"></span> Edit schedule</button>
-   </div>
-   <div class="live-seg-wrap" id="live_seg_wrap"><div id="segment_table"></div></div>
    <div id="live_detail_body"></div>
   </div>
   </div><!-- /#live_view -->

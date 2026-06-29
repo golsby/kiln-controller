@@ -1301,6 +1301,9 @@ $(document).ready(function()
             //the message is an array of profiles
             //FIXME: this should be better, maybe a {"profiles": ...} container?
             profiles = message;
+            // sort the dropdown case-insensitively by name (indices below are
+            // derived from this sorted array, so they stay consistent)
+            profiles.sort(function(a,b){ return (a.name||"").toLowerCase().localeCompare((b.name||"").toLowerCase()); });
             //delete old options in select
             $('#e2').find('option').remove().end();
             // check if current selected value is a valid profile name
@@ -1339,6 +1342,7 @@ $(document).ready(function()
         setupControlSocket();
         setupStorageSocket();
 
+        loadMru();   // recent-firings quick pick in the idle view
 
         // native <select> (no select2): on iOS it uses the native picker
         // instead of popping the keyboard, and styles cleanly
@@ -1498,18 +1502,26 @@ function renderHistDetail(d, target){
       (d.imported?'<span class="tag-imported">imported from log</span>':'')+
       '<a class="report-link" href="/kiln/report.html?id='+encodeURIComponent(d.id)+'&scale='+(typeof temp_scale!=="undefined"?temp_scale:"f")+'" target="_blank"><span class="glyphicon glyphicon-print"></span> Report</a>'+
       '</div></div>'+
-    '<div class="stats tnum">'+histStatsHtml(s)+'</div>'+
-    '<div class="hist-card"><div class="card-hd"><h3>Planned vs. actual</h3>'+
+    // stats live in the top status card during a firing, so only show the strip
+    // for completed firings in history
+    (live ? "" : '<div class="stats tnum">'+histStatsHtml(s)+'</div>')+
+    // graph + timeline merged into one white card, split by a rule
+    '<div class="hist-card">'+
+      (live ? '<div class="live-editbar"><button type="button" class="btn-edit-sched" id="btn_edit_sched" onclick="toggleLiveSegments()"><span class="glyphicon glyphicon-edit"></span> Edit schedule</button></div>' : '')+
+      '<div class="card-hd"><h3>Planned vs. actual</h3>'+
       '<div class="legend"><span class="lg"><span class="swatch" style="background:var(--heat)"></span>Actual</span>'+
       '<span class="lg"><span class="swatch dash"></span>Planned</span>'+
       '<span class="lg"><span class="swatch" style="background:var(--danger)"></span>Interruption</span>'+
       '<span class="lg">📷 Photo</span></div></div>'+
       '<div class="selcap" id="hist_selcap"></div>'+
-      '<div class="graph-wrap"><canvas id="hist_graph"></canvas><div class="hist-tip" id="hist_tip"></div></div></div>'+
-    '<div class="lower">'+
-      '<div class="hist-card panel-pad"><h2>Event timeline</h2><div class="timeline" id="hist_timeline"></div></div>'+
-      '<div class="hist-card panel-pad"><h2>Firing notes</h2>'+renderHistNotes(d)+'</div>'+
-    '</div>';
+      '<div class="graph-wrap"><canvas id="hist_graph"></canvas><div class="hist-tip" id="hist_tip"></div></div>'+
+      '<hr class="card-rule">'+
+      '<div class="merge-lower">'+
+        '<div id="tl_section"><h2>Event timeline</h2><div class="timeline" id="hist_timeline"></div></div>'+
+        (live ? '<div id="seg_section" style="display:none"><h2>Schedule — ramp / target / hold</h2><div id="segment_table"></div></div>' : '')+
+      '</div>'+
+    '</div>'+
+    '<div class="hist-card panel-pad notes-card" id="notes_card"><h2>Firing notes</h2>'+renderHistNotes(d)+'</div>';
   $(target).html(html);
   histBuildCurve(d);
   histRenderTimeline(d);
@@ -1890,6 +1902,7 @@ function enterLiveDetail(fid){
   $("#hist_main").empty();   // avoid duplicate element ids if the history view was open
   $.getJSON("/api/firings/"+encodeURIComponent(fid)+"?resolution=800").done(function(d){
     histDetail=d; histSel=null; renderHistDetail(d, "#live_detail_body");
+    segment_editor_count = -1;   // force manageSegmentEditor to (re)fill the new #segment_table
   });
   if(livePollTimer) clearInterval(livePollTimer);
   livePollTimer=setInterval(function(){
@@ -1913,16 +1926,45 @@ function histRefreshLive(d){
 }
 function exitLiveDetail(){
   if(livePollTimer){ clearInterval(livePollTimer); livePollTimer=null; }
-  $("#live_seg_wrap").removeClass("open"); $("#btn_edit_sched").removeClass("on"); segments_armed=false;
+  segments_armed=false;
   $("#live_detail").hide(); $("#live_detail_body").empty();
   $("#live_view > .panel").show();
+  loadMru();   // a firing just ended -> refresh the recent list
 }
-// "Edit schedule" toggle: reveal the segment editor (hidden by default, #3)
+// "Edit schedule" toggle: swap the timeline + notes for the ramp/target/hold list
 function toggleLiveSegments(){
-  var open=!$("#live_seg_wrap").hasClass("open");
-  $("#live_seg_wrap").toggleClass("open", open);
-  $("#btn_edit_sched").toggleClass("on", open);
-  segments_armed=open;
-  if(!open) selected_segment=-1;
+  var on = !$("#btn_edit_sched").hasClass("on");
+  $("#btn_edit_sched").toggleClass("on", on)
+    .html(on ? '<span class="glyphicon glyphicon-ok"></span> Done' : '<span class="glyphicon glyphicon-edit"></span> Edit schedule');
+  $("#seg_section").toggle(on);
+  $("#tl_section").toggle(!on);
+  $("#notes_card").toggle(!on);
+  segments_armed = on;
+  if(!on) selected_segment = -1;
   if(typeof applySegmentsEditable==="function") applySegmentsEditable();
+}
+
+/* recent-firings (MRU) quick pick — the last 7 distinct profiles you've fired,
+   shown in the idle view for one-tap selection before starting. */
+function loadMru(){
+  var el=document.getElementById("mru_firings"); if(!el) return;
+  $.getJSON("/api/firings").done(function(list){
+    var seen={}, items=[];
+    (list||[]).forEach(function(f){ var n=f.profile_name; if(n && !seen[n]){ seen[n]=1; items.push(f); } });
+    items=items.slice(0,7);
+    if(!items.length){ el.innerHTML=""; return; }
+    el.innerHTML='<span class="mru-label">Recent:</span>'+items.map(function(f){
+      return '<button type="button" class="mru-chip" data-name="'+histEsc(f.profile_name)+'">'+histEsc(f.title||f.profile_name)+'</button>';
+    }).join("");
+    $(el).find(".mru-chip").each(function(){ var nm=this.getAttribute("data-name");
+      this.onclick=function(){ selectProfileByName(nm); }; });
+  });
+}
+function selectProfileByName(name){
+  if(typeof profiles==="undefined" || !profiles) return;
+  for(var i=0;i<profiles.length;i++){
+    if(profiles[i].name===name){ selected_profile=i; selected_profile_name=name; $('#e2').val(i); updateProfile(i); return; }
+  }
+  $.bootstrapGrowl("That profile (\""+histEsc(name)+"\") is no longer saved.",
+    {type:"warning", align:"center", width:380, delay:3500});
 }

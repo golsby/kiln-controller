@@ -706,11 +706,21 @@ body {
 
 /* live in-progress detail + Edit-schedule control */
 #live_detail { margin-top:16px; }
-.live-editbar { display:flex; align-items:center; gap:10px; margin-bottom:12px; }
-.live-editbar .btn-edit-sched { border:1px solid var(--line); background:var(--card); color:var(--ink); border-radius:10px; padding:7px 13px; font-size:13px; font-weight:600; cursor:pointer; box-shadow:var(--shadow); }
-.live-editbar .btn-edit-sched.on { background:var(--warn); color:#fff; border-color:transparent; }
-.live-seg-wrap { display:none; margin-bottom:16px; }
-.live-seg-wrap.open { display:block; }
+/* the Edit-schedule bar sits at the top of the merged graph card */
+.hist-scope .live-editbar { display:flex; align-items:center; gap:10px; padding:12px 18px 0; }
+.hist-scope .btn-edit-sched { border:1px solid var(--line); background:var(--card); color:var(--ink); border-radius:10px; padding:6px 13px; font-size:13px; font-weight:600; cursor:pointer; }
+.hist-scope .btn-edit-sched.on { background:var(--warn); color:#fff; border-color:transparent; }
+/* merged graph + timeline card: gray rule between, padded lower section */
+.hist-scope .card-rule { border:none; border-top:1px solid var(--line); margin:4px 0 0; }
+.hist-scope .merge-lower { padding:16px 18px; }
+.hist-scope .merge-lower h2 { font-size:12px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); margin:0 0 10px; font-weight:600; }
+.hist-scope #segment_table h4 { font-size:14px; margin:0 0 8px; }
+.hist-scope #segment_table h4 small { color:var(--muted); font-weight:400; }
+/* recent-firings (MRU) quick pick in the idle view */
+#mru_firings { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:0 0 12px; }
+#mru_firings .mru-label { font-size:12px; color:var(--muted); font-weight:600; }
+#mru_firings .mru-chip { border:1px solid var(--line); background:var(--card); color:var(--ink); border-radius:999px; padding:5px 12px; font-size:13px; cursor:pointer; box-shadow:var(--shadow); }
+#mru_firings .mru-chip:hover { border-color:var(--heat); }
 
 /* mobile: master-detail. Show the list OR the detail, never both side by side
    (the side-by-side layout forced the page wider than the phone). */
