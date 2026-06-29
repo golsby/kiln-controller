@@ -11,6 +11,7 @@ import loadenv
 
 import bottle
 import time
+import gevent
 #from bottle import post, get
 from gevent.pywsgi import WSGIServer
 from geventwebsocket.handler import WebSocketHandler
@@ -84,24 +85,35 @@ def handle_api():
             return json.dumps(oven.pid.pidstats)
 
 
+def _io(fn, *args):
+    '''Run a blocking filesystem call in gevent's threadpool so a large
+    firing-history read/write doesn't stall the web event loop. The control and
+    watcher run on separate OS threads and are unaffected either way; this keeps
+    the *web* server responsive (websockets, other requests) during big reads.'''
+    return gevent.get_hub().threadpool.apply(fn, args)
+
+
 @app.get('/api/firings')
 def handle_list_firings():
     '''Lightweight history listing (summaries only, newest first).'''
     bottle.response.content_type = 'application/json'
-    return json.dumps(firingStore.list_firings(config.firings_directory))
+    return json.dumps(_io(firingStore.list_firings, config.firings_directory))
 
 
 @app.get('/api/firings/<fid>')
 def handle_get_firing(fid):
     '''Full record + events + samples for one firing. ?resolution=N caps the
-    number of sample points returned (for graphing); omit it for full data.'''
+    number of sample points returned (for graphing); ?samples=0 skips the
+    (large) samples entirely — the live view uses that and gets its curve from
+    the /status websocket stream instead.'''
     bottle.response.content_type = 'application/json'
     resolution = bottle.request.query.get('resolution')
     try:
         resolution = int(resolution) if resolution else None
     except ValueError:
         resolution = None
-    data = firingStore.get_firing(config.firings_directory, fid, resolution)
+    include_samples = bottle.request.query.get('samples') != '0'
+    data = _io(firingStore.get_firing, config.firings_directory, fid, resolution, include_samples)
     if data is None:
         bottle.response.status = 404
         return json.dumps({"error": "firing not found"})
@@ -136,7 +148,7 @@ def handle_delete_firing(fid):
     if _live_recorder(fid) is not None:
         bottle.response.status = 409
         return json.dumps({"error": "cannot delete a firing while it is running"})
-    if not firingStore.delete_firing(config.firings_directory, fid):
+    if not _io(firingStore.delete_firing, config.firings_directory, fid):
         bottle.response.status = 404
         return json.dumps({"error": "firing not found"})
     return json.dumps({"success": True})
@@ -158,8 +170,8 @@ def handle_add_photo(fid):
         except (TypeError, ValueError):
             runtime = None
     live = _live_recorder(fid)
-    name = live.add_photo(upload, runtime) if live else \
-        firingStore.add_photo(config.firings_directory, fid, upload, runtime)
+    name = _io(live.add_photo, upload, runtime) if live else \
+        _io(firingStore.add_photo, config.firings_directory, fid, upload, runtime)
     if name is None:
         bottle.response.status = 400
         return json.dumps({"error": "unsupported image type or unknown firing"})

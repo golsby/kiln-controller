@@ -509,20 +509,26 @@ def _bundle_dir(firings_dir, fid):
     return None
 
 
-def get_firing(firings_dir, fid, resolution=None):
+def get_firing(firings_dir, fid, resolution=None, include_samples=True):
     '''Full record + events + (optionally downsampled) samples for one firing,
     or None if the id is unknown/invalid. `resolution` caps the number of
-    sample points returned; None returns them all.'''
+    sample points returned; None returns them all. With include_samples=False
+    the (potentially large) samples.ndjson is skipped entirely — used by the
+    live view, which gets its curve from the /status websocket stream instead.'''
     dirpath = _bundle_dir(firings_dir, fid)
     if dirpath is None:
         return None
     rec = _read_record(dirpath)
     if rec is None:
         return None
-    samples = _read_ndjson(os.path.join(dirpath, SAMPLES))
     rec["events"] = _read_ndjson(os.path.join(dirpath, EVENTS))
-    rec["sample_count"] = len(samples)
-    rec["samples"] = _downsample(samples, resolution)
+    if include_samples:
+        samples = _read_ndjson(os.path.join(dirpath, SAMPLES))
+        rec["sample_count"] = len(samples)
+        rec["samples"] = _downsample(samples, resolution)
+    else:
+        rec["samples"] = []
+        rec["sample_count"] = None
     return rec
 
 

@@ -1179,6 +1179,7 @@ $(document).ready(function()
                 }
 
                 updateLiveView(x);
+                histLiveTick();   // redraw the live detail's actual curve from this status point
                 state_last = state;
 
             }
@@ -1748,6 +1749,32 @@ function histBuildCurve(d){
   histCurve={act:act,plan:plan,xmax:xmax||1,ymax:ymax,events:d.events||[],bands:bands,photos:photos};
 }
 
+// Live curve: actual from the /status websocket stream (graph.live.data) and
+// planned from the running profile (graph.profile.data, reflects live edits) —
+// no samples fetched from the server. Events/photos come from histDetail
+// (refreshed by the light poll).
+function histBuildCurveLive(){
+  if(!histDetail) return;
+  var act=(graph.live&&graph.live.data?graph.live.data:[]).map(function(p){return [p[0],p[1]];});
+  var plan=(graph.profile&&graph.profile.data&&graph.profile.data.length?graph.profile.data
+            :((histDetail.profile&&histDetail.profile.data)||[])).map(function(p){return [p[0],p[1]];});
+  var xmax=0,ymax=0;
+  act.forEach(function(p){xmax=Math.max(xmax,p[0]); ymax=Math.max(ymax,p[1]);});
+  plan.forEach(function(p){xmax=Math.max(xmax,p[0]); ymax=Math.max(ymax,p[1]);});
+  ymax=Math.ceil((ymax*1.08)/100)*100||100;
+  var bands=[], open=null;
+  (histDetail.events||[]).forEach(function(e){ if(e.type==="power_interruption") open=e.runtime;
+    else if(e.type==="resumed"&&open!=null){ bands.push([open,e.runtime]); open=null; } });
+  var photos=((histDetail.metadata&&histDetail.metadata.photos)||[]).filter(function(p){return typeof p.runtime==="number";});
+  histCurve={act:act,plan:plan,xmax:xmax||1,ymax:ymax,events:histDetail.events||[],bands:bands,photos:photos};
+}
+var _liveTickAt=0;
+function histLiveTick(){   // called from the /status handler; redraw live curve, throttled
+  if(!liveFiringId || !histDetail || !$("#live_detail").is(":visible") || !document.getElementById("hist_graph")) return;
+  var now=(new Date()).getTime(); if(now-_liveTickAt < 1500) return; _liveTickAt=now;
+  histBuildCurveLive(); histDrawGraph();
+}
+
 function histDrawGraph(){
   var cv=document.getElementById("hist_graph"); if(!cv||!histCurve) return;
   var dpr=window.devicePixelRatio||1, W=cv.clientWidth, H=cv.clientHeight;
@@ -1900,29 +1927,42 @@ function updateLiveView(x){
 }
 function enterLiveDetail(fid){
   $("#hist_main").empty();   // avoid duplicate element ids if the history view was open
+  // One heavy read on open to seed the actual curve with the firing's history so
+  // far; after that the curve is driven by the /status websocket (histLiveTick)
+  // and the recurring poll is light (?samples=0) — just events / notes / summary.
   $.getJSON("/api/firings/"+encodeURIComponent(fid)+"?resolution=800").done(function(d){
     histDetail=d; histSel=null; renderHistDetail(d, "#live_detail_body");
     segment_editor_count = -1;   // force manageSegmentEditor to (re)fill the new #segment_table
+    seedLiveCurve(d);            // prime graph.live.data so the websocket can append
   });
   if(livePollTimer) clearInterval(livePollTimer);
   livePollTimer=setInterval(function(){
     if(liveFiringId!==fid){ clearInterval(livePollTimer); livePollTimer=null; return; }
-    $.getJSON("/api/firings/"+encodeURIComponent(fid)+"?resolution=800").done(histRefreshLive);
-  }, 5000);
+    $.getJSON("/api/firings/"+encodeURIComponent(fid)+"?samples=0").done(histRefreshLive);
+  }, 12000);
+}
+// Seed the live actual-curve buffer from the firing's recorded samples (only if
+// the websocket hasn't already accumulated more), then draw from the websocket.
+function seedLiveCurve(d){
+  var s=d.samples||[];
+  if(s.length > ((graph.live&&graph.live.data)?graph.live.data.length:0))
+    graph.live.data = s.map(function(p){return [p.runtime, p.temperature];});
+  histBuildCurveLive(); if(document.getElementById("hist_graph")) histDrawGraph();
 }
 function histRefreshLive(d){
-  // only the live detail; bail if the user navigated to history (its canvas
-  // would otherwise be clobbered) or nothing is loaded
+  // Light poll (no samples): refresh events / notes / summary; the actual curve
+  // comes from the websocket via histBuildCurveLive(). Bail if the user navigated
+  // to history (its canvas would otherwise be clobbered) or nothing is loaded.
   if(!liveFiringId || !$("#live_detail").is(":visible")) return;
   if(!histDetail || histDetail.id!==d.id || !document.getElementById("hist_graph")) return;
-  histDetail.summary=d.summary; histDetail.events=d.events; histDetail.samples=d.samples;
+  histDetail.summary=d.summary; histDetail.events=d.events;
   // refresh photos from the server only if it has at least as many (so a stale
   // poll can't drop a photo the user just added locally)
   if(d.metadata && (d.metadata.photos||[]).length >= ((histDetail.metadata&&histDetail.metadata.photos)||[]).length)
     histDetail.metadata.photos = d.metadata.photos;
   $("#live_detail_body .stats").html(histStatsHtml(d.summary));
   $("#live_detail_body .dh-pill").attr("class","pill dh-pill "+(d.summary.status||"")).text(d.summary.status||"");
-  histBuildCurve(histDetail); histDrawGraph(); histRenderTimeline(histDetail); histUpdateSelCap();
+  histBuildCurveLive(); histDrawGraph(); histRenderTimeline(histDetail); histUpdateSelCap();
 }
 function exitLiveDetail(){
   if(livePollTimer){ clearInterval(livePollTimer); livePollTimer=null; }
