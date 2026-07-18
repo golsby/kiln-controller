@@ -741,3 +741,8 @@ body {
     .hist-scope .lower { grid-template-columns:1fr; }
     .hist-scope .dh-title { font-size:21px; }
 }
+
+/* Profile segment editor row actions: subtle icon buttons with tooltips */
+.seg-action { color: #999; padding: 0 5px; text-decoration: none; }
+.seg-action:hover, .seg-action:focus { color: #333; text-decoration: none; }
+.seg-action .glyphicon-trash:hover { color: #c9302c; }

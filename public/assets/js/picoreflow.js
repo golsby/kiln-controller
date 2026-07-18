@@ -22,6 +22,11 @@ var selected_segment = -1;        // the one segment currently unlocked to edit
 var segment_end_times = [];        // nominal end time (s) of each segment, for click mapping
 var graph_start_ms = null;        // wall-clock (ms) corresponding to runtime=0, for clock-time axis
 
+// profile editor (rate/temp/hold) buffer. Each segment is {rate: deg/hr,
+// target: deg, hold: seconds}, matching deriveSegments/segmentsToPoints.
+var edit_segments = [];
+var edit_start_temp = 100;        // ambient the first ramp starts from (editable)
+
 var protocol = 'ws:';
 if (window.location.protocol == 'https:') {
     protocol = 'wss:';
@@ -194,56 +199,108 @@ function updateProgress(percentage)
     $('#progress_pct').html(Math.round(pct) + '%');
 }
 
+// Parse a free-text hold duration into seconds. Accepts "45m", "3.5h",
+// "3h 30m", "90m" or a bare number (treated as minutes). Case/space tolerant;
+// unparseable input -> 0.
+function parseHold(text)
+{
+    if (text === null || text === undefined) return 0;
+    var s = ("" + text).toLowerCase().trim();
+    if (s === "") return 0;
+    var secs = 0;
+    var matched = false;
+    var re = /([0-9]*\.?[0-9]+)\s*([hm])/g;
+    var m;
+    while ((m = re.exec(s)) !== null) {
+        matched = true;
+        var val = parseFloat(m[1]);
+        secs += (m[2] === "h") ? val * 3600 : val * 60;
+    }
+    if (!matched) {
+        // bare number -> minutes
+        var n = parseFloat(s);
+        if (!isNaN(n)) secs = n * 60;
+    }
+    return secs;
+}
+
+// Render seconds as a canonical "Xh Ym" hold string (0 -> "0m").
+function formatHold(seconds)
+{
+    var mins = Math.round((seconds || 0) / 60);
+    var h = Math.floor(mins / 60);
+    var m = mins % 60;
+    if (h > 0 && m > 0) return h + "h " + m + "m";
+    if (h > 0) return h + "h";
+    return m + "m";
+}
+
+// Recompute the ideal curve from the edit buffer and redraw the graph.
+function refreshEditGraph()
+{
+    graph.profile.data = segmentsToPoints(edit_segments, edit_start_temp);
+    graph.plot = $.plot("#graph_container", [ graph.profile, graph.live ], getOptions());
+}
+
+// Rate/temp/hold segment editor. Renders the edit buffer (edit_segments +
+// edit_start_temp) as an editable table and keeps the graph in sync.
 function updateProfileTable()
 {
-    var dps = 0;
-    var slope = "";
-    var color = "";
+    var iconBtn = function(action, glyph, tip){ return '<button type="button" class="btn btn-link btn-xs seg-action" onclick="'+action+'" title="'+tip+'"><span class="glyphicon glyphicon-'+glyph+'"></span></button>'; };
+    var addBtn = function(pos){ return iconBtn('insertSegment('+pos+')', 'plus', 'Add segment below'); };
 
-    var html = '<h3>Schedule Points</h3><div class="table-responsive" style="scroll: none"><table class="table table-striped">';
-        html += '<tr><th style="width: 50px">#</th><th>Target Time in ' + time_scale_long+ '</th><th>Target Temperature in °'+temp_scale_display+'</th><th>Slope in &deg;'+temp_scale_display+'/'+time_scale_slope+'</th><th></th></tr>';
+    var html = '<h4 style="margin-top:0">Segments</h4>';
+    html += '<div class="table-responsive"><table class="table table-condensed" style="margin-bottom:0">';
+    html += '<tr><th style="width:44px">#</th><th>Rate &deg;'+temp_scale_display+'/hr</th><th>Target &deg;'+temp_scale_display+'</th><th>Hold</th><th style="width:64px"></th></tr>';
 
-    for(var i=0; i<graph.profile.data.length;i++)
+    // Start temp is row 0; its "Add below" inserts a segment at the top.
+    html += '<tr class="active"><td><small>Start</small></td>';
+    html += '<td class="text-muted">&mdash;</td>';
+    html += '<td><input type="number" class="form-control input-sm" id="seg-start" value="'+ Math.round(edit_start_temp) +'" style="width:80px" /></td>';
+    html += '<td class="text-muted">&mdash;</td>';
+    html += '<td style="white-space:nowrap">'+ addBtn(0) +'</td></tr>';
+
+    for(var i=0; i<edit_segments.length; i++)
     {
-
-        if (i>=1) dps =  ((graph.profile.data[i][1]-graph.profile.data[i-1][1])/(graph.profile.data[i][0]-graph.profile.data[i-1][0]) * 10) / 10;
-        if (dps  > 0) { slope = "up";     color="rgba(206, 5, 5, 1)"; } else
-        if (dps  < 0) { slope = "down";   color="rgba(23, 108, 204, 1)"; dps *= -1; } else
-        if (dps == 0) { slope = "right";  color="grey"; }
-
-        html += '<tr><td><h4>' + (i+1) + '</h4></td>';
-        html += '<td><input type="text" class="form-control" id="profiletable-0-'+i+'" value="'+ timeProfileFormatter(graph.profile.data[i][0],true) + '" style="width: 60px" /></td>';
-        html += '<td><input type="text" class="form-control" id="profiletable-1-'+i+'" value="'+ graph.profile.data[i][1] + '" style="width: 60px" /></td>';
-        html += '<td><div class="input-group"><span class="glyphicon glyphicon-circle-arrow-' + slope + ' input-group-addon ds-trend" style="background: '+color+'"></span><input type="text" class="form-control ds-input" readonly value="' + formatDPS(dps) + '" style="width: 100px" /></div></td>';
-        html += '<td>&nbsp;</td></tr>';
+        var s = edit_segments[i];
+        html += '<tr><td>' + (i+1) + '</td>';
+        html += '<td><input type="number" min="0" class="form-control input-sm" id="segrow-rate-'+i+'" value="'+ Math.round(s.rate) +'" style="width:80px" /></td>';
+        html += '<td><input type="number" class="form-control input-sm" id="segrow-target-'+i+'" value="'+ Math.round(s.target) +'" style="width:80px" /></td>';
+        html += '<td><input type="text" class="form-control input-sm" id="segrow-hold-'+i+'" value="'+ formatHold(s.hold) +'" style="width:90px" title="e.g. 45m, 3.5h, 3h 30m" /></td>';
+        html += '<td style="white-space:nowrap">'+ addBtn(i+1) + iconBtn('deleteSegment('+i+')', 'trash', 'Delete segment') +'</td></tr>';
     }
 
     html += '</table></div>';
 
     $('#profile_table').html(html);
 
-    //Link table to graph
-    $(".form-control").change(function(e)
-        {
-            var id = $(this)[0].id; //e.currentTarget.attributes.id
-            var value = parseInt($(this)[0].value);
-            var fields = id.split("-");
-            var col = parseInt(fields[1]);
-            var row = parseInt(fields[2]);
+    // Start temp
+    $('#seg-start').change(function()
+    {
+        var v = parseFloat($(this).val());
+        if (!isNaN(v)) edit_start_temp = v;
+        refreshEditGraph();
+        updateProfileTable();
+    });
 
-            if (graph.profile.data.length > 0) {
-            if (col == 0) {
-                graph.profile.data[row][col] = timeProfileFormatter(value,false);
-            }
-            else {
-                graph.profile.data[row][col] = value;
-            }
+    // Segment fields -> edit buffer -> graph
+    $('#profile_table [id^="segrow-"]').change(function()
+    {
+        var fields = $(this)[0].id.split("-");  // segrow-<field>-<row>
+        var field = fields[1];
+        var row = parseInt(fields[2]);
+        if (row < 0 || row >= edit_segments.length) return;
 
-            graph.plot = $.plot("#graph_container", [ graph.profile, graph.live ], getOptions());
-            }
-            updateProfileTable();
+        if (field === "hold") {
+            edit_segments[row].hold = parseHold($(this).val());
+        } else {
+            var v = parseFloat($(this).val());
+            if (!isNaN(v)) edit_segments[row][field] = v;
+        }
 
-        });
+        refreshEditGraph();
+        updateProfileTable();
+    });
 }
 
 function timeProfileFormatter(val, down) {
@@ -674,10 +731,12 @@ function enterNewMode()
     $('#form_profile_name').attr('value', '');
     $('#form_profile_name').attr('placeholder', 'Please enter a name');
     graph.profile.points.show = true;
-    graph.profile.draggable = true;
-    graph.profile.data = [];
-    graph.plot = $.plot("#graph_container", [ graph.profile, graph.live ], getOptions());
+    graph.profile.draggable = false;
+    edit_start_temp = 100;
+    edit_segments = [{rate: 100, target: 200, hold: 0}];
+    refreshEditGraph();
     updateProfileTable();
+    $('#profile_table').show();
 }
 
 function enterEditMode()
@@ -687,12 +746,15 @@ function enterEditMode()
     $('#edit').show();
     $('#profile_selector').hide();
     $('#btn_controls').hide();
-    console.log(profiles);
     $('#form_profile_name').val(profiles[selected_profile].name);
     graph.profile.points.show = true;
-    graph.profile.draggable = true;
-    graph.plot = $.plot("#graph_container", [ graph.profile, graph.live ], getOptions());
+    graph.profile.draggable = false;
+    edit_segments = deriveSegments(profiles[selected_profile]);
+    var d = profiles[selected_profile].data;
+    edit_start_temp = (d && d.length) ? d[0][1] : 100;
+    refreshEditGraph();
     updateProfileTable();
+    $('#profile_table').show();
 }
 
 function leaveEditMode()
@@ -710,73 +772,39 @@ function leaveEditMode()
     graph.plot = $.plot("#graph_container", [ graph.profile, graph.live ], getOptions());
 }
 
-function newPoint()
+// Insert a new segment at position `pos` (0 = top). Default its target a bit
+// above whatever comes before it so the curve stays sensible until edited.
+function insertSegment(pos)
 {
-    if(graph.profile.data.length > 0)
-    {
-        var pointx = parseInt(graph.profile.data[graph.profile.data.length-1][0])+15;
-    }
-    else
-    {
-        var pointx = 0;
-    }
-    graph.profile.data.push([pointx, Math.floor((Math.random()*230)+25)]);
-    graph.plot = $.plot("#graph_container", [ graph.profile, graph.live ], getOptions());
+    if (pos < 0) pos = 0;
+    if (pos > edit_segments.length) pos = edit_segments.length;
+    var prev = (pos > 0) ? edit_segments[pos-1].target : edit_start_temp;
+    edit_segments.splice(pos, 0, {rate: 100, target: prev + 100, hold: 0});
+    refreshEditGraph();
     updateProfileTable();
 }
 
-function delPoint()
+function deleteSegment(i)
 {
-    graph.profile.data.splice(-1,1)
-    graph.plot = $.plot("#graph_container", [ graph.profile, graph.live ], getOptions());
+    if (i < 0 || i >= edit_segments.length) return;
+    edit_segments.splice(i, 1);
+    refreshEditGraph();
     updateProfileTable();
 }
 
-function toggleTable()
-{
-    if($('#profile_table').css('display') == 'none')
-    {
-        $('#profile_table').slideDown();
-    }
-    else
-    {
-        $('#profile_table').slideUp();
-    }
-}
 
 function saveProfile()
 {
     name = $('#form_profile_name').val();
-    var rawdata = graph.plot.getData()[0].data
-    var data = [];
-    var last = -1;
 
-    for(var i=0; i<rawdata.length;i++)
-    {
-        if(rawdata[i][0] > last)
-        {
-          data.push([rawdata[i][0], rawdata[i][1]]);
-        }
-        else
-        {
-          $.bootstrapGrowl("<span class=\"glyphicon glyphicon-exclamation-sign\"></span> <b>ERROR 88:</b><br/>An oven is not a time-machine", {
-            ele: 'body', // which element to append to
-            type: 'alert', // (null, 'info', 'error', 'success')
-            offset: {from: 'top', amount: 250}, // 'top', or 'bottom'
-            align: 'center', // ('left', 'right', or 'center')
-            width: 385, // (integer, or 'auto')
-            delay: 5000,
-            allow_dismiss: true,
-            stackup_spacing: 10 // spacing between consecutively stacked growls.
-          });
+    // rate/temp/hold is the source of truth; the time/temp `data` curve is
+    // derived so the graph and the server agree on what will run.
+    var rth = edit_segments.map(function(s){
+        return [Math.round(s.rate), Math.round(s.target), s.hold / 3600];
+    });
+    var data = segmentsToPoints(edit_segments, edit_start_temp);
 
-          return false;
-        }
-
-        last = rawdata[i][0];
-    }
-
-    var profile = { "type": "profile", "data": data, "name": name }
+    var profile = { "type": "profile", "rth": rth, "data": data, "name": name }
     var put = { "cmd": "PUT", "profile": profile }
 
     var put_cmd = JSON.stringify(put);
