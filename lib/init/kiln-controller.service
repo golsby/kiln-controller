@@ -1,8 +1,13 @@
 [Unit]
 Description=kiln-controller
+After=network-online.target
+Wants=network-online.target
 
 [Service]
-ExecStart=/home/pi/kiln-controller/venv/bin/python /home/pi/kiln-controller/kiln-controller.py
+WorkingDirectory=/home/brian/kiln-controller
+ExecStart=/home/brian/kiln-controller/venv/bin/python /home/brian/kiln-controller/kiln-controller.py
+Restart=on-failure
+RestartSec=5
 
 [Install]
 WantedBy=multi-user.target

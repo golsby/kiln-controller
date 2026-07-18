@@ -34,7 +34,7 @@ Browser ──HTTPS──> Cloudflare edge ──(Access: Google SSO)──> Clo
 |-------|-------|
 | Public hostname | `kilns.bgillespie.art` |
 | Tunnel name | `kiln` |
-| Tunnel UUID | `dac29cb5-4621-48c1-bfdc-bbc0a4ccee1e` |
+| Tunnel UUID | `35f0b8e1-ccc2-42a7-ae99-327a5edb5004` |
 | Pi service | `cloudflared.service` (systemd), independent of `kiln-controller.service` |
 | Local origin | `http://localhost:80` |
 | DNS | `bgillespie.art` DNS is hosted on **Cloudflare** (registrar is **Namecheap**; nameservers point at Cloudflare). CloudFront site + Google Workspace email records were migrated over and are **DNS-only / grey-cloud**; only `kilns.*` is proxied/orange. |
