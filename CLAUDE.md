@@ -74,6 +74,11 @@ Deploy is a `git pull` on the device:
 - **Backend Python** takes effect only on `systemctl restart kiln-controller`.
 - **A restart drops the contactor and resets the oven to IDLE — it does not auto-resume.** Never restart a live firing without resuming it afterward (the controller snapshots `resume.json` and supports a resume command via `/api`).
 
+**Remote access:** the dashboard is reachable off-network at `https://kilns.bgillespie.art`
+via a **Cloudflare Tunnel** (`cloudflared` systemd service on the Pi, outbound-only) gated by
+**Cloudflare Access → Google SSO**. It's a separate service from `kiln-controller` (safe to
+install/restart mid-firing). Full setup + reproduce steps: [`docs/remote-access-cloudflare.md`](docs/remote-access-cloudflare.md).
+
 The exact SSH connection details, the resume procedure, and the safe restart-during-firing
 sequence are operational specifics kept in the working Claude's local memory rather than here.
 
