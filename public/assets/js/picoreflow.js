@@ -1036,10 +1036,21 @@ $(document).ready(function()
                     });
                 }
 
-                $.each(x.log, function(i,v) {
-                    graph.live.data.push([v.runtime, v.temperature]);
-                });
-                graph.plot = $.plot("#graph_container", [ graph.profile, graph.live ] , getOptions());
+                // The backlog is the server's complete firing log, so replace the
+                // live buffer rather than appending — on a websocket reconnect
+                // graph.live.data already holds the accumulated stream points, and
+                // appending the full backlog (which also starts at runtime 0) would
+                // re-trace the whole firing from the origin (the spurious line back
+                // to the start point). Replacing keeps the curve correct without a
+                // page refresh.
+                graph.live.data = (x.log || []).map(function(v){ return [v.runtime, v.temperature]; });
+                if ($("#graph_container").is(":visible"))
+                    graph.plot = $.plot("#graph_container", [ graph.profile, graph.live ] , getOptions());
+                // redraw the live-detail canvas too, if it's the visible view
+                if (typeof histBuildCurveLive === "function" && histDetail && $("#live_detail").is(":visible")) {
+                    histBuildCurveLive();
+                    if (document.getElementById("hist_graph")) histDrawGraph();
+                }
             }
 
             if(state!="EDIT")
