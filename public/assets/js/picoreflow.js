@@ -981,7 +981,11 @@ $(document).ready(function()
 
         function scheduleReconnect()
         {
-            setConnected(false);
+            // Note: the banner is driven solely by the status socket (see
+            // setupStatusSocket) — the live heartbeat. The config/control/storage
+            // sockets go idle after their initial GET and get dropped by the
+            // Cloudflare tunnel's websocket idle timeout; those closes should
+            // silently reconnect without flagging the whole UI as disconnected.
             if (_reconnect_timer) { return; }   // a retry is already pending
             _reconnect_timer = setTimeout(function()
             {
@@ -1014,6 +1018,7 @@ $(document).ready(function()
             ws_status.onclose = function()
             {
                 console.log("Status Socket closed - will retry");
+                setConnected(false);
                 scheduleReconnect();
             };
 
