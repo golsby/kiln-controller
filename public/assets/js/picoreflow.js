@@ -131,6 +131,35 @@ function clockTime(date)
     return date.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'});
 }
 
+// A firing can run past midnight, so a bare clock time ("5:22 AM") is ambiguous.
+// Return the day relative to now: "" today, "Tomorrow", a weekday within a week,
+// else a short date. Compared on calendar days (not 24h spans).
+function dayLabel(date)
+{
+    var now = new Date();
+    var d0 = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    var d1 = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    var days = Math.round((d1 - d0) / 86400000);
+    if (days <= 0) return '';
+    if (days === 1) return 'Tomorrow';
+    if (days < 7) return date.toLocaleDateString([], {weekday: 'long'});
+    return date.toLocaleDateString([], {month: 'short', day: 'numeric'});
+}
+
+// "5:22 AM" today, "5:22 AM Tomorrow" / "5:22 AM Monday" on later days (inline)
+function clockTimeDay(date)
+{
+    var d = dayLabel(date);
+    return clockTime(date) + (d ? ' ' + d : '');
+}
+
+// same, but the day drops to a second line (for the tight progress ring)
+function clockTimeDayBr(date)
+{
+    var d = dayLabel(date);
+    return clockTime(date) + (d ? '<br>' + d : '');
+}
+
 // countdown like "1:23:45" or "12:30"
 function hms(seconds)
 {
@@ -369,9 +398,12 @@ function clockTickGenerator(axis)
         if (steps[i] >= span / want) { step = steps[i]; break; }
     }
     var stepMs = step * 1000;
-    // first clock instant >= axis.min, aligned to the step (15-min granularity
-    // keeps :00/:15/:30/:45 alignment in any real timezone)
-    var firstMs = Math.ceil((base + axis.min * 1000) / stepMs) * stepMs;
+    // align to LOCAL clock boundaries (from local midnight, not the UTC epoch) so
+    // multi-hour steps land on round hours (12/3/6/9…) instead of odd offsets that
+    // depend on the timezone
+    var bd = new Date(base + axis.min * 1000);
+    var midMs = new Date(bd.getFullYear(), bd.getMonth(), bd.getDate(), 0, 0, 0, 0).getTime();
+    var firstMs = midMs + Math.ceil((base + axis.min * 1000 - midMs) / stepMs) * stepMs;
     var ticks = [];
     for (var t = firstMs; t <= base + axis.max * 1000; t += stepMs) {
         ticks.push((t - base) / 1000);              // back to runtime seconds
@@ -1141,7 +1173,7 @@ $(document).ready(function()
                     // completion clock = run start + total (sim) duration. Anchored
                     // to graph_start_ms (the wall-clock at runtime=0) so it reads as a
                     // fixed wall-clock time and doesn't count down when the sim runs fast.
-                    $('#eta_complete').html('done ' + clockTime(new Date(graph_start_ms + x.totaltime * 1000)));
+                    $('#eta_complete').html('done ' + clockTimeDayBr(new Date(graph_start_ms + x.totaltime * 1000)));
 
                     // current segment, with both the ramp-reaches-temp ETA and
                     // the hold-ends ETA as fixed clock times
@@ -1151,8 +1183,8 @@ $(document).ready(function()
                         $('#seg_info').html('Seg ' + (x.segment + 1) + ' &middot; ' + Math.round(seg.target) + '&deg;' + temp_scale_display);
                         // during a ramp, segment_remaining = (time to target) + full hold
                         var rampRem = (x.phase === 'RAMP') ? Math.max(0, x.segment_remaining - seg.hold) : 0;
-                        var rampEta = clockTime(new Date(graph_start_ms + (x.runtime + rampRem) * 1000));
-                        var holdEta = clockTime(new Date(graph_start_ms + (x.runtime + x.segment_remaining) * 1000));
+                        var rampEta = clockTimeDay(new Date(graph_start_ms + (x.runtime + rampRem) * 1000));
+                        var holdEta = clockTimeDay(new Date(graph_start_ms + (x.runtime + x.segment_remaining) * 1000));
                         var txt;
                         if (x.phase === 'RAMP') {
                             txt = 'eta ' + rampEta;
@@ -1449,6 +1481,26 @@ function histFmtDur(sec){
   return h>=1 ? (h+"h "+(m<10?"0":"")+m+"m") : (m+"m");
 }
 function histFmtClock(sec){ var h=Math.floor(sec/3600), m=Math.round((sec%3600)/60); return h+":"+(m<10?"0":"")+m; }
+// short wall-clock label for a graph tick, e.g. "6 AM" on the hour, "6:30 AM" off it
+function histClockShort(date){
+  var h=date.getHours(), m=date.getMinutes(), ap=h<12?"AM":"PM", h12=h%12||12;
+  return m===0 ? (h12+" "+ap) : (h12+":"+(m<10?"0":"")+m+" "+ap);
+}
+// x-axis tick runtimes (seconds from start) aligned to clean LOCAL clock
+// boundaries — whole hours for anything but very short firings — so the labels
+// read as round clock times (12/3/6/9…) instead of odd offsets from the start.
+// `startMs` is the wall-clock at runtime=0; `span`/return are in seconds.
+function histClockTicks(startMs, span, want){
+  var steps=[900,1800,3600,7200,10800,14400,21600,43200,86400]; // 15m,30m,1h,2h,3h,4h,6h,12h,24h
+  var step=steps[steps.length-1];
+  for(var i=0;i<steps.length;i++){ if(steps[i] >= span/Math.max(1,want)){ step=steps[i]; break; } }
+  var stepMs=step*1000, d=new Date(startMs);
+  var midMs=new Date(d.getFullYear(),d.getMonth(),d.getDate(),0,0,0,0).getTime(); // local midnight of start day
+  var firstMs=midMs+Math.ceil((startMs-midMs)/stepMs)*stepMs;                     // first boundary >= start
+  var ticks=[], endMs=startMs+span*1000;
+  for(var t=firstMs; t<=endMs+1; t+=stepMs){ ticks.push((t-startMs)/1000); }
+  return ticks;
+}
 function histFmtDate(iso){
   if(!iso) return "—";
   var d=new Date(String(iso).replace("Z","")); if(isNaN(d)) return iso;
@@ -1798,7 +1850,9 @@ function histBuildCurve(d){
     else if(e.type==="resumed"&&open!=null){ bands.push([open,e.runtime]); open=null; } });
   // photos with a capture runtime become markers on the graph / rows in the timeline
   var photos=((d.metadata&&d.metadata.photos)||[]).filter(function(p){return typeof p.runtime==="number";});
-  histCurve={act:act,plan:plan,xmax:xmax||1,ymax:ymax,events:d.events||[],bands:bands,photos:photos};
+  // wall-clock at runtime=0, for a clock-time x-axis (falls back to duration if absent)
+  var startMs=null; if(d.summary&&d.summary.started_at){ var sm=Date.parse(d.summary.started_at); if(!isNaN(sm)) startMs=sm; }
+  histCurve={act:act,plan:plan,xmax:xmax||1,ymax:ymax,events:d.events||[],bands:bands,photos:photos,startMs:startMs};
 }
 
 // Live curve: actual from the /status websocket stream (graph.live.data) and
@@ -1818,7 +1872,10 @@ function histBuildCurveLive(){
   (histDetail.events||[]).forEach(function(e){ if(e.type==="power_interruption") open=e.runtime;
     else if(e.type==="resumed"&&open!=null){ bands.push([open,e.runtime]); open=null; } });
   var photos=((histDetail.metadata&&histDetail.metadata.photos)||[]).filter(function(p){return typeof p.runtime==="number";});
-  histCurve={act:act,plan:plan,xmax:xmax||1,ymax:ymax,events:histDetail.events||[],bands:bands,photos:photos};
+  // live: graph_start_ms is the wall-clock at runtime=0; fall back to the record's started_at
+  var startMs=graph_start_ms;
+  if(startMs==null && histDetail.summary && histDetail.summary.started_at){ var sm=Date.parse(histDetail.summary.started_at); if(!isNaN(sm)) startMs=sm; }
+  histCurve={act:act,plan:plan,xmax:xmax||1,ymax:ymax,events:histDetail.events||[],bands:bands,photos:photos,startMs:startMs};
 }
 var _liveTickAt=0;
 function histLiveTick(){   // called from the /status handler; redraw live curve, throttled
@@ -1849,9 +1906,22 @@ function histDrawGraph(){
     g.strokeStyle="#e6e9ef"; g.globalAlpha=.8; g.beginPath(); g.moveTo(m.l,y); g.lineTo(W-m.r,y); g.stroke(); g.globalAlpha=1;
     g.fillText(v.toFixed(0), m.l-8, y); }
   g.textAlign="center"; g.textBaseline="top";
-  var xstep=histNiceStep(histCurve.xmax,6);
-  for(var xv=0; xv<=histCurve.xmax+1; xv+=xstep){ g.fillText(histFmtClock(xv), X(xv), m.t+ph+8); }
-  g.textAlign="left"; g.fillText(histTU(), 6, m.t-2);
+  if(histCurve.startMs){
+    // clock-time axis on round hours; tag the first tick of each new calendar day
+    var ticks=histClockTicks(histCurve.startMs, histCurve.xmax, W<560?4:7), prevDay=null;
+    ticks.forEach(function(rt){
+      if(rt<-1 || rt>histCurve.xmax+1) return;
+      var dt=new Date(histCurve.startMs+rt*1000), px=X(rt);
+      g.fillStyle="#9aa3b2"; g.fillText(histClockShort(dt), px, m.t+ph+8);
+      var dk=dt.getFullYear()+"-"+dt.getMonth()+"-"+dt.getDate();
+      if(dk!==prevDay){ g.fillStyle="#6b7280"; g.fillText(dt.toLocaleDateString([],{weekday:"short"}), px, m.t+ph+21); }
+      prevDay=dk;
+    });
+  } else {
+    var xstep=histNiceStep(histCurve.xmax,6);
+    for(var xv=0; xv<=histCurve.xmax+1; xv+=xstep){ g.fillText(histFmtClock(xv), X(xv), m.t+ph+8); }
+  }
+  g.textAlign="left"; g.fillStyle="#9aa3b2"; g.fillText(histTU(), 6, m.t-2);
 
   if(histCurve.plan.length){
     g.strokeStyle="#0a84ff"; g.lineWidth=1.6; g.setLineDash([5,4]); g.beginPath();
