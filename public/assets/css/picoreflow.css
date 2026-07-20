@@ -643,15 +643,26 @@ body {
 .hist-scope .panel-pad { padding:16px 18px; }
 .hist-scope .panel-pad h2 { font-size:12px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); margin:0 0 10px; font-weight:600; }
 .hist-scope .timeline { display:flex; flex-direction:column; gap:2px; }   /* grows to show every event (no inner scroll) */
-.hist-scope .ev { display:grid; grid-template-columns:64px 22px 1fr; gap:10px; align-items:start; padding:7px 8px; border-radius:8px; cursor:pointer; transition:background .1s; }
+/* day/date divider inserted whenever the calendar day shifts (mirrors the graph) */
+.hist-scope .ev-day { font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); font-weight:700; padding:11px 8px 3px; margin-top:5px; border-top:1px solid var(--line); }
+.hist-scope .ev-day:first-child { border-top:none; margin-top:0; padding-top:2px; }
+.hist-scope .ev { display:grid; grid-template-columns:88px 22px 1fr; gap:10px; align-items:center; padding:7px 8px; border-radius:8px; cursor:pointer; transition:background .1s; }
 .hist-scope .ev:hover { background:#f7f9fc; }
 .hist-scope .ev.sel { background:#eef3fb; }
 .hist-scope .ev:focus-visible { outline:2px solid var(--info); outline-offset:1px; }
-.hist-scope .ev-time { font-size:12px; color:var(--muted); padding-top:1px; }
-.hist-scope .ev-ico { width:22px; height:22px; border-radius:50%; display:grid; place-items:center; font-size:11px; color:#fff; margin-top:1px; }
+.hist-scope .ev-time { display:flex; flex-direction:column; line-height:1.25; }
+.hist-scope .ev-clock { font-size:12px; color:var(--ink); font-weight:600; }
+.hist-scope .ev-elapsed { font-size:11px; color:var(--muted); }
+.hist-scope .ev-ico { width:22px; height:22px; border-radius:50%; display:grid; place-items:center; font-size:11px; color:#fff;
+  -webkit-print-color-adjust:exact; print-color-adjust:exact; }   /* keep icon fills when printing */
+.hist-scope .ev-ico.plain { background:transparent !important; font-size:15px; line-height:1; }   /* segment / photo markers: glyph only */
 .hist-scope .ev-txt { font-size:13px; }
 .hist-scope .ev-txt b { font-weight:600; }
 .hist-scope .ev-sub { color:var(--muted); font-size:12px; }
+/* photo timeline row: the photo itself is the bullet — larger than the icon
+   column, centered so the overflow eats into the surrounding gaps rather than
+   widening the layout */
+.hist-scope .ev-ico-photo { width:38px; height:38px; border-radius:6px; object-fit:cover; border:1px solid var(--line); cursor:pointer; place-self:center; }
 
 /* editable firing notes */
 .hist-scope .notes .nf { margin-bottom:14px; }
@@ -686,8 +697,6 @@ body {
 .hist-scope .tnum { font-variant-numeric:tabular-nums; }
 .hist-scope .hist-empty { padding:40px; text-align:center; color:var(--muted); }
 
-/* photo entry in the timeline (a clickable thumbnail at its exact time slice) */
-.hist-scope .ev .ev-thumb { width:38px; height:38px; border-radius:6px; object-fit:cover; border:1px solid var(--line); cursor:pointer; vertical-align:middle; margin-left:8px; }
 /* captioned thumbnails carry a small glyph in the notes grid */
 .hist-scope .photo-thumb.has-note::after { content:"\1F4DD"; position:absolute; left:3px; bottom:2px; font-size:11px; }
 .hist-scope .photo-thumb img { cursor:pointer; }

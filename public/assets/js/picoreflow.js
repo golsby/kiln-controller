@@ -1529,6 +1529,20 @@ var HIST_EV = {
   resumed:{c:"var(--info)",i:"↻",t:function(e){return ["Resumed", e.detail&&e.detail.gap_s?("after "+histFmtDur(e.detail.gap_s)):(e.detail&&e.detail.from_status?("from "+e.detail.from_status):"")];}}
 };
 
+// Rich label for a segment_transition, using the profile-derived segments so a
+// ramp shows its rate + destination temp and a hold shows its temp + duration.
+// `segs` come from deriveSegments(profile); falls back to the bare phase.
+function histSegText(e, segs){
+  var det=e.detail||{}, phase=det.phase;
+  var title="Segment "+((typeof det.segment==="number")?(det.segment+1):"");
+  var seg=segs&&segs[det.segment];
+  if(!seg) return [title, phase||""];
+  if(phase==="HOLD"){
+    return [title, "hold "+Math.round(seg.target)+histTU()+(seg.hold>0?(" for "+histFmtDur(seg.hold)):"")];
+  }
+  return [title, "ramp to "+Math.round(seg.target)+histTU()+(seg.rate>0?(" at "+Math.round(seg.rate)+histTU()+"/hr"):"")];
+}
+
 function toggleHistory(){ if($("#history_view").is(":visible")) showLive(); else showHistory(); }
 function showHistory(){ $("#live_view").hide(); $("#live_detail_body").empty(); $("#history_view").show().removeClass("detail-open"); loadFiringList();
   $("#nav_history").html('<span class="glyphicon glyphicon-chevron-left"></span> Live dashboard');
@@ -1788,6 +1802,9 @@ function histDeleteFiring(){
 function histRenderTimeline(d){
   var tl=document.getElementById("hist_timeline"); if(!tl) return; tl.innerHTML="";
   var fid=encodeURIComponent(d.id||"");
+  var segs=deriveSegments(d.profile||{});
+  // wall-clock at runtime=0, so rows can carry clock time + day/date like the graph
+  var startMs=null; if(d.summary&&d.summary.started_at){ var sm=Date.parse(d.summary.started_at); if(!isNaN(sm)) startMs=sm; }
   // combine events and (time-stamped) photos, sorted by runtime, so a photo
   // lands in the timeline at its exact moment
   var rows=[];
@@ -1796,24 +1813,46 @@ function histRenderTimeline(d){
     if(typeof p.runtime==="number") rows.push({kind:"photo", rt:p.runtime, p:p});
   });
   rows.sort(function(a,b){ return a.rt-b.rt; });
+  var prevDay=null;
   rows.forEach(function(r){
+    var when=(startMs!=null)?new Date(startMs+r.rt*1000):null;
+    // day divider whenever the calendar day shifts (mirrors the graph x-axis)
+    if(when){
+      var dk=when.getFullYear()+"-"+when.getMonth()+"-"+when.getDate();
+      if(dk!==prevDay){
+        var dv=document.createElement("div"); dv.className="ev-day tnum";
+        dv.textContent=when.toLocaleDateString([],{weekday:"long"})+" · "+
+                       when.toLocaleDateString([],{month:"short",day:"numeric"});
+        tl.appendChild(dv); prevDay=dk;
+      }
+    }
+    var timeHtml='<span class="ev-time tnum">'+
+      (when?('<span class="ev-clock">'+histEsc(clockTime(when))+'</span>'):'')+
+      '<span class="ev-elapsed">'+histFmtClock(r.rt)+' elapsed</span></span>';
     var row=document.createElement("div"); row.className="ev";
     if(r.kind==="event"){
       var def=HIST_EV[r.e.type]||{c:"var(--muted)",i:"·",t:function(){return [r.e.type,""];}};
-      var tt=def.t(r.e), title=tt[0], sub=tt[1];
+      var tt=(r.e.type==="segment_transition")?histSegText(r.e,segs):def.t(r.e);
+      var title=tt[0], sub=tt[1];
+      var plain=(r.e.type==="segment_transition");   // segment marker: no filled circle
+      // inline !important so the colors survive Bootstrap's print reset
+      // (* { background:transparent!important; color:#000!important }), which
+      // index.html loads but the standalone report page does not
+      var icoStyle=plain?('color:'+def.c+' !important')
+                        :('background:'+def.c+' !important;color:#fff !important');
       row.tabIndex=0; row.setAttribute("data-idx",r.idx); row.setAttribute("data-col",histCssVar(def.c));
-      row.innerHTML='<span class="ev-time tnum">'+histFmtClock(r.rt)+'</span>'+
-        '<span class="ev-ico" style="background:'+def.c+'">'+def.i+'</span>'+
+      row.innerHTML=timeHtml+
+        '<span class="ev-ico'+(plain?' plain':'')+'" style="'+icoStyle+'">'+def.i+'</span>'+
         '<span class="ev-txt"><b>'+histEsc(title)+'</b>'+(sub?' <span class="ev-sub">— '+histEsc(sub)+'</span>':'')+'</span>';
       row.onclick=function(){ histSelectEvent(r.idx); };
       row.onkeydown=function(ev){ if(ev.key==="Enter"||ev.key===" "){ ev.preventDefault(); histSelectEvent(r.idx); } };
     } else {
       var note=r.p.note?(' — '+histEsc(r.p.note)):"";
-      row.innerHTML='<span class="ev-time tnum">'+histFmtClock(r.rt)+'</span>'+
-        '<span class="ev-ico" style="background:#6b7280">📷</span>'+
-        '<span class="ev-txt"><b>Photo</b><span class="ev-sub">'+note+'</span>'+
-        '<img class="ev-thumb" src="/api/firings/'+fid+'/photos/'+encodeURIComponent(r.p.file)+'" '+
-        'onclick="openPhotoLightbox(\''+r.p.file+'\')"></span>';
+      // the photo itself is the bullet in the icon column
+      row.innerHTML=timeHtml+
+        '<img class="ev-ico-photo" src="/api/firings/'+fid+'/photos/'+encodeURIComponent(r.p.file)+'" '+
+        'onclick="openPhotoLightbox(\''+r.p.file+'\')">'+
+        '<span class="ev-txt"><b>Photo</b><span class="ev-sub">'+note+'</span></span>';
     }
     tl.appendChild(row);
   });
@@ -1836,7 +1875,7 @@ function histUpdateSelCap(){
   var cap=document.getElementById("hist_selcap"); if(!cap) return;
   if(histSel==null || !histCurve || !histCurve.events[histSel]){ cap.innerHTML='<span class="muted">Tip: select an event below to mark it on the graph</span>'; return; }
   var e=histCurve.events[histSel], def=HIST_EV[e.type]||{c:"var(--ink)",t:function(){return [e.type,""];}};
-  var tt=def.t(e);
+  var tt=(e.type==="segment_transition")?histSegText(e, deriveSegments((histDetail&&histDetail.profile)||{})):def.t(e);
   cap.innerHTML='<span class="seldot" style="background:'+histCssVar(def.c)+'"></span><b>'+histEsc(tt[0])+'</b>'+
     (tt[1]?' <span class="muted">— '+histEsc(tt[1])+'</span>':'')+
     ' <span class="muted tnum">· '+histFmtClock(e.runtime||0)+' elapsed</span>'+
