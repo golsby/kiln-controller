@@ -69,7 +69,11 @@ function updateProfile(id)
     $('#sel_prof_eta').html(job_time);
     $('#sel_prof_cost').html(kwh + ' kWh ('+ currency_type +': '+ cost +')');
     graph.profile.data = profiles[id].data;
-    graph.plot = $.plot("#graph_container", [ graph.profile, graph.live ] , getOptions());
+    // Only paint when the flot panel is actually on screen; the panel is hidden
+    // on load until we know the state (showIdlePanel replots on reveal), so a
+    // RUNNING refresh never flashes the default profile.
+    if ($("#graph_container").is(":visible"))
+        graph.plot = $.plot("#graph_container", [ graph.profile, graph.live ] , getOptions());
     populateAimSegments(id);
 }
 
@@ -1302,7 +1306,8 @@ $(document).ready(function()
             console.log (e.data);
             x = JSON.parse(e.data);
             graph.live.data.push([x.runtime, x.temperature]);
-            graph.plot = $.plot("#graph_container", [ graph.profile, graph.live ] , getOptions());
+            if ($("#graph_container").is(":visible"))
+                graph.plot = $.plot("#graph_container", [ graph.profile, graph.live ] , getOptions());
 
         }
         }   // end setupControlSocket
@@ -1473,7 +1478,10 @@ function showHistory(){ $("#live_view").hide(); $("#live_detail_body").empty(); 
   if(window.history&&history.replaceState) history.replaceState(null,"","#history"); }
 function showLive(){ $("#history_view").hide(); $("#live_view").show();
   $("#nav_history").html('<span class="glyphicon glyphicon-time"></span> History');
-  if(liveFiringId){ enterLiveDetail(liveFiringId); } else { $(window).trigger("resize"); }
+  if(liveFiringId){ enterLiveDetail(liveFiringId); }
+  else { $("#live_view > .panel").show();
+         graph.plot = $.plot("#graph_container", [ graph.profile, graph.live ], getOptions());
+         $(window).trigger("resize"); }
   if(window.history&&history.replaceState) history.replaceState(null,"",location.pathname+location.search); }
 function histBackToList(){ $("#history_view").removeClass("detail-open"); }
 
@@ -1962,12 +1970,34 @@ $(function(){
 function updateLiveView(x){
   if(typeof x.runtime==="number") liveRuntime=x.runtime;
   var fid=x.firing_id;
-  if(x.state==="RUNNING" && fid){
-    if($("#live_view").is(":visible")){ $("#live_view > .panel").hide(); $("#live_detail").show(); }
-    if(liveFiringId!==fid){ liveFiringId=fid; enterLiveDetail(fid); }
+  if(x.state==="RUNNING"){
+    // Only switch to the live detail once we also have the firing id. A RUNNING
+    // status without one yet: keep waiting, don't reveal the idle panel.
+    if(fid){
+      if($("#live_view").is(":visible")){ $("#live_view > .panel").hide(); $("#live_detail").show(); }
+      if(liveFiringId!==fid){ liveFiringId=fid; enterLiveDetail(fid); }
+    }
   } else if(liveFiringId!==null){
     liveFiringId=null; exitLiveDetail();
+  } else if(x.state){
+    // A real, non-running state (IDLE/DONE/…): reveal the flot preview panel
+    // (hidden by default). Idempotent after the first. We gate on x.state being
+    // set so the initial stateless "backlog" message doesn't flash the panel
+    // before we know whether a firing is running.
+    showIdlePanel();
   }
+}
+// Reveal the idle flot preview/editor panel and plot it. The panel is
+// display:none in the markup so a refresh into a RUNNING firing goes straight
+// to #live_detail without flashing the old graph; this brings it back for idle.
+function showIdlePanel(){
+  var panel=$("#live_view > .panel");
+  if(panel.css("display")!=="none") return;   // already revealed
+  panel.show();
+  // $.plot needs a sized, on-screen container; if live_view is hidden (e.g. the
+  // history view is open) showLive() will plot on return instead.
+  if($("#graph_container").is(":visible"))
+    graph.plot = $.plot("#graph_container", [ graph.profile, graph.live ], getOptions());
 }
 function enterLiveDetail(fid){
   $("#hist_main").empty();   // avoid duplicate element ids if the history view was open
@@ -2012,8 +2042,8 @@ function exitLiveDetail(){
   if(livePollTimer){ clearInterval(livePollTimer); livePollTimer=null; }
   segments_armed=false;
   $("#live_detail").hide(); $("#live_detail_body").empty();
-  $("#live_view > .panel").show();
-  loadMru();   // a firing just ended -> refresh the recent list
+  showIdlePanel();   // a firing just ended -> back to the idle preview panel
+  loadMru();   // ...and refresh the recent list
 }
 // "Edit schedule" toggle: swap the timeline + notes for the ramp/target/hold list
 function toggleLiveSegments(){

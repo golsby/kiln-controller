@@ -76,7 +76,11 @@
     </div>
    </div>
   </div>
-  <div class="panel panel-default">
+  <!-- Idle preview/editor (flot). Hidden until a /status message tells us the
+       state: a refresh into a RUNNING firing goes straight to #live_detail
+       below, so this old graph never flashes. showIdlePanel() reveals it when
+       idle. -->
+  <div class="panel panel-default" style="display:none">
    <div class="panel-heading">
     <div id="profile_selector" class="pull-left">
      <select id="e2" class="select2" style="margin-top: 4px"></select>
