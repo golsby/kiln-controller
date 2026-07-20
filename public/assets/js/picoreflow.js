@@ -21,6 +21,7 @@ var segments_armed = false;       // Edit button toggled on (graph clickable)
 var selected_segment = -1;        // the one segment currently unlocked to edit
 var segment_end_times = [];        // nominal end time (s) of each segment, for click mapping
 var graph_start_ms = null;        // wall-clock (ms) corresponding to runtime=0, for clock-time axis
+var graph_projection = [];        // [runtime, temp] waypoints for the estimated remaining schedule (live only)
 
 // profile editor (rate/temp/hold) buffer. Each segment is {rate: deg/hr,
 // target: deg, hold: seconds}, matching deriveSegments/segmentsToPoints.
@@ -1160,6 +1161,8 @@ $(document).ready(function()
 
                     if (graph_start_ms === null) graph_start_ms = Date.now() - x.runtime * 1000;
                     graph.live.data.push([x.runtime, x.temperature]);
+                    // estimated remaining schedule (gray dotted) from the current state
+                    graph_projection = buildProjection(x);
                     // flot is the idle/preview graph; while a firing is active the
                     // unified live detail (canvas) is shown instead, so only replot
                     // flot when it's actually visible (replotting a hidden/zero-size
@@ -1211,6 +1214,7 @@ $(document).ready(function()
                     $("#nav_clear").hide();
                     $("#segment_table").hide();
                     setStateWord("WAITING", "waiting");
+                    graph_projection = [];
                     updateProgress(0);
                     $('#progress_pct').html(hms(x.wait_remaining));
                     $('#eta_complete').html('until start');
@@ -1230,6 +1234,7 @@ $(document).ready(function()
                     segments_armed = false;     // re-lock for the next run
                     selected_segment = -1;
                     graph_start_ms = null;      // idle preview anchors at "now"
+                    graph_projection = [];
                     var isErr = (typeof state === 'string' && state.indexOf('ERROR') !== -1);
                     setStateWord(state, isErr ? 'error' : '');
                     updateProgress(0);
@@ -1838,6 +1843,36 @@ function histUpdateSelCap(){
     '<button type="button" class="selx" onclick="histSelectEvent('+histSel+')">clear</button>';
 }
 
+// Reconstruct the estimated remaining schedule as [runtime, temp] waypoints,
+// mirroring the server's SegmentScheduler.remaining_seconds (on-rate from the
+// current setpoint), so the projected end lines up with the "done" clock time.
+// `x` is a RUNNING /status message. Returns [] if we can't project.
+function buildProjection(x){
+  var segs = x && x.segments;
+  if(!segs || x.segment==null || x.segment>=segs.length || x.phase==null) return [];
+  var t = x.runtime, sp = x.target;                    // now, at the current setpoint
+  // start at the actual tip so the dotted line continues the live curve
+  var tip = (graph.live && graph.live.data && graph.live.data.length) ? graph.live.data[graph.live.data.length-1] : null;
+  var pts = [[t, tip ? tip[1] : sp]];
+  var seg = segs[x.segment];
+  if(x.phase === 'RAMP'){
+    var rate = (seg.rate||0)/3600;                     // deg/hr -> deg/s
+    if(rate>0 && seg.target!==sp) t += Math.abs(seg.target-sp)/rate;
+    sp = seg.target; pts.push([t, sp]);
+    if(seg.hold>0){ t += seg.hold; pts.push([t, sp]); }
+  } else { // HOLD: only the remaining soak of this segment is left
+    var holdRem = Math.max(0, x.segment_remaining||0);
+    if(holdRem>0){ t += holdRem; pts.push([t, sp]); }
+  }
+  for(var i=x.segment+1; i<segs.length; i++){
+    var s=segs[i], r=(s.rate||0)/3600;
+    if(r>0 && s.target!==sp) t += Math.abs(s.target-sp)/r;
+    sp = s.target; pts.push([t, sp]);
+    if(s.hold>0){ t += s.hold; pts.push([t, sp]); }
+  }
+  return pts;
+}
+
 function histBuildCurve(d){
   var act=(d.samples||[]).map(function(s){return [s.runtime,s.temperature];});
   var plan=((d.profile&&d.profile.data)||[]).map(function(p){return [p[0],p[1]];});
@@ -1852,7 +1887,7 @@ function histBuildCurve(d){
   var photos=((d.metadata&&d.metadata.photos)||[]).filter(function(p){return typeof p.runtime==="number";});
   // wall-clock at runtime=0, for a clock-time x-axis (falls back to duration if absent)
   var startMs=null; if(d.summary&&d.summary.started_at){ var sm=Date.parse(d.summary.started_at); if(!isNaN(sm)) startMs=sm; }
-  histCurve={act:act,plan:plan,xmax:xmax||1,ymax:ymax,events:d.events||[],bands:bands,photos:photos,startMs:startMs};
+  histCurve={act:act,plan:plan,proj:[],xmax:xmax||1,ymax:ymax,events:d.events||[],bands:bands,photos:photos,startMs:startMs};
 }
 
 // Live curve: actual from the /status websocket stream (graph.live.data) and
@@ -1864,9 +1899,11 @@ function histBuildCurveLive(){
   var act=(graph.live&&graph.live.data?graph.live.data:[]).map(function(p){return [p[0],p[1]];});
   var plan=(graph.profile&&graph.profile.data&&graph.profile.data.length?graph.profile.data
             :((histDetail.profile&&histDetail.profile.data)||[])).map(function(p){return [p[0],p[1]];});
+  var proj=graph_projection||[];
   var xmax=0,ymax=0;
   act.forEach(function(p){xmax=Math.max(xmax,p[0]); ymax=Math.max(ymax,p[1]);});
   plan.forEach(function(p){xmax=Math.max(xmax,p[0]); ymax=Math.max(ymax,p[1]);});
+  proj.forEach(function(p){xmax=Math.max(xmax,p[0]); ymax=Math.max(ymax,p[1]);});
   ymax=Math.ceil((ymax*1.08)/100)*100||100;
   var bands=[], open=null;
   (histDetail.events||[]).forEach(function(e){ if(e.type==="power_interruption") open=e.runtime;
@@ -1875,7 +1912,7 @@ function histBuildCurveLive(){
   // live: graph_start_ms is the wall-clock at runtime=0; fall back to the record's started_at
   var startMs=graph_start_ms;
   if(startMs==null && histDetail.summary && histDetail.summary.started_at){ var sm=Date.parse(histDetail.summary.started_at); if(!isNaN(sm)) startMs=sm; }
-  histCurve={act:act,plan:plan,xmax:xmax||1,ymax:ymax,events:histDetail.events||[],bands:bands,photos:photos,startMs:startMs};
+  histCurve={act:act,plan:plan,proj:proj,xmax:xmax||1,ymax:ymax,events:histDetail.events||[],bands:bands,photos:photos,startMs:startMs};
 }
 var _liveTickAt=0;
 function histLiveTick(){   // called from the /status handler; redraw live curve, throttled
@@ -1927,6 +1964,14 @@ function histDrawGraph(){
     g.strokeStyle="#0a84ff"; g.lineWidth=1.6; g.setLineDash([5,4]); g.beginPath();
     histCurve.plan.forEach(function(p,i){ var x=X(p[0]),y=Y(p[1]); i?g.lineTo(x,y):g.moveTo(x,y); });
     g.stroke(); g.setLineDash([]);
+  }
+  if(histCurve.proj&&histCurve.proj.length){
+    // estimated remaining schedule: gray dotted, drawn under the actual curve
+    g.strokeStyle="#9aa3b2"; g.lineWidth=1.8; g.lineCap="round"; g.setLineDash([0.5,5]); g.beginPath();
+    histCurve.proj.forEach(function(p,i){ var x=X(p[0]),y=Y(p[1]); i?g.lineTo(x,y):g.moveTo(x,y); });
+    g.stroke(); g.setLineDash([]); g.lineCap="butt";
+    var pe=histCurve.proj[histCurve.proj.length-1];
+    g.fillStyle="#9aa3b2"; g.beginPath(); g.arc(X(pe[0]),Y(pe[1]),3,0,7); g.fill();
   }
   if(histCurve.act.length){
     var grad=g.createLinearGradient(0,m.t,0,m.t+ph);
