@@ -1972,22 +1972,28 @@ function histDrawGraph(){
 
 var histHoverX=null;
 function histDrawCrosshair(){
-  var cv=document.getElementById("hist_graph"); if(histHoverX==null||!histCurve||!cv||!histCurve.act.length) return;
+  var cv=document.getElementById("hist_graph"); if(histHoverX==null||!histCurve||!cv) return;
+  if(!histCurve.act.length && !histCurve.plan.length) return;
   var g=cv.getContext("2d"), W=cv.clientWidth, H=cv.clientHeight;
   var m={l:46,r:14,t:18,b:40}, pw=W-m.l-m.r, ph=H-m.t-m.b;
-  var xv=(histHoverX-m.l)/pw*histCurve.xmax;
-  var lo=0,hi=histCurve.act.length-1;
-  for(var i=0;i<histCurve.act.length;i++){ if(histCurve.act[i][0]>=xv){ hi=i; lo=Math.max(0,i-1); break; } }
-  var p=(Math.abs(histCurve.act[lo][0]-xv)<Math.abs(histCurve.act[hi][0]-xv))?histCurve.act[lo]:histCurve.act[hi];
+  // free-track the cursor across the whole x range (clamped to the plot), so the
+  // planned/future portion is inspectable too — not just where actual data exists
+  var xv=Math.max(0, Math.min(histCurve.xmax, (histHoverX-m.l)/pw*histCurve.xmax));
   var X=function(x){return m.l+(x/histCurve.xmax)*pw;}, Y=function(y){return m.t+ph-(y/histCurve.ymax)*ph;};
-  var px=X(p[0]), py=Y(p[1]);
+  // actual only exists up to the last sample; interpolate the plan everywhere
+  var lastActRt=histCurve.act.length?histCurve.act[histCurve.act.length-1][0]:-1;
+  var av=(histCurve.act.length && xv<=lastActRt+1)?histInterp(histCurve.act,xv):null;
+  var pv=histInterp(histCurve.plan,xv);
+  var px=X(xv);
   g.strokeStyle="rgba(17,21,28,.22)"; g.lineWidth=1; g.setLineDash([2,3]); g.beginPath(); g.moveTo(px,m.t); g.lineTo(px,m.t+ph); g.stroke(); g.setLineDash([]);
-  g.fillStyle="#fff"; g.strokeStyle="#ff6b35"; g.lineWidth=2; g.beginPath(); g.arc(px,py,4,0,7); g.fill(); g.stroke();
-  var pv=histInterp(histCurve.plan,p[0]);
+  // marker sits on the actual curve when present, otherwise on the planned curve
+  var dotY=(av!=null)?Y(av):(pv!=null?Y(pv):null), dotCol=(av!=null)?"#ff6b35":"#0a84ff";
+  if(dotY!=null){ g.fillStyle="#fff"; g.strokeStyle=dotCol; g.lineWidth=2; g.beginPath(); g.arc(px,dotY,4,0,7); g.fill(); g.stroke(); }
+  var when=histCurve.startMs ? (clockTimeDay(new Date(histCurve.startMs+xv*1000))+' &middot; '+histFmtClock(xv)+' elapsed') : (histFmtClock(xv)+' elapsed');
   var tip=document.getElementById("hist_tip");
-  tip.style.opacity=1; tip.style.left=px+"px"; tip.style.top=py+"px";
-  tip.innerHTML='<div class="tt-t">'+histFmtClock(p[0])+' elapsed</div>'+
-    '<div class="tt-row"><span class="d" style="background:#ff6b35"></span>Actual <b style="margin-left:auto">'+Math.round(p[1])+'°</b></div>'+
+  tip.style.opacity=1; tip.style.left=px+"px"; tip.style.top=(dotY!=null?dotY:m.t+ph/2)+"px";
+  tip.innerHTML='<div class="tt-t">'+when+'</div>'+
+    (av!=null?'<div class="tt-row"><span class="d" style="background:#ff6b35"></span>Actual <b style="margin-left:auto">'+Math.round(av)+'°</b></div>':'')+
     (pv!=null?'<div class="tt-row"><span class="d" style="background:#0a84ff"></span>Planned <b style="margin-left:auto">'+Math.round(pv)+'°</b></div>':'');
 }
 function histInterp(pts,x){
