@@ -1526,6 +1526,7 @@ var histRating = null;   // editable notes state for the open firing
 var histEditTags = [];
 var histEditDefects = [];
 var histPhotoPins = [];  // {x, photo} graph camera-marker hit-targets
+var histNotePins = [];   // {x, note} graph note-marker hit-targets
 var liveRuntime = 0;     // latest firing-clock seconds from /status (for photo capture-time)
 var liveFiringId = null; // active firing's bundle id, while a firing is in progress
 var livePollTimer = null;
@@ -1682,12 +1683,19 @@ function renderHistDetail(d, target){
     (live ? "" : '<div class="stats tnum">'+histStatsHtml(s)+'</div>')+
     // graph + timeline merged into one white card, split by a rule
     '<div class="hist-card">'+
-      (live ? '<div class="live-editbar"><button type="button" class="btn-edit-sched" id="btn_edit_sched" onclick="toggleLiveSegments()"><span class="glyphicon glyphicon-edit"></span> Edit schedule</button></div>' : '')+
+      '<div class="live-editbar">'+
+        (live ? '<button type="button" class="btn-edit-sched" id="btn_edit_sched" onclick="toggleLiveSegments()"><span class="glyphicon glyphicon-edit"></span> Edit schedule</button>' : '')+
+        '<div class="anno-group">'+
+          '<button type="button" class="btn-anno" onclick="histAddNote()">+ Note</button>'+
+          '<button type="button" class="btn-anno" onclick="histPhotoPick()">+ Photo</button>'+
+          '<input type="file" id="hist_photo_input" accept="image/*" style="display:none" onchange="histUploadPhoto(this)">'+
+        '</div>'+
+      '</div>'+
       '<div class="card-hd"><h3>Planned vs. actual</h3>'+
       '<div class="legend"><span class="lg"><span class="swatch" style="background:var(--heat)"></span>Actual</span>'+
       '<span class="lg"><span class="swatch dash"></span>Planned</span>'+
       '<span class="lg"><span class="swatch" style="background:var(--danger)"></span>Interruption</span>'+
-      '<span class="lg">📷 Photo</span></div></div>'+
+      '<span class="lg">📷 Photo</span><span class="lg">📝 Note</span></div></div>'+
       '<div class="selcap" id="hist_selcap"></div>'+
       '<div class="graph-wrap"><canvas id="hist_graph"></canvas><div class="hist-tip" id="hist_tip"></div></div>'+
       '<hr class="card-rule">'+
@@ -1702,7 +1710,7 @@ function renderHistDetail(d, target){
   histRenderTimeline(d);
   histDrawGraph();
   histUpdateSelCap();
-  histRenderStars(); histRenderTags(); histRenderDefects(); histRenderPhotos();
+  histRenderStars(); histRenderTags(); histRenderDefects(); histRenderPhotos(); histRenderNoteList();
 }
 
 function renderHistNotes(d){
@@ -1716,6 +1724,7 @@ function renderHistNotes(d){
     '<div class="nf"><label>What happened</label><textarea id="nf_summary" class="nf-area" maxlength="5000" placeholder="Outcome, observations…">'+histEsc(o.summary||"")+'</textarea></div>'+
     '<div class="nf"><label>Defects</label><div class="chips" id="nf_defects"></div></div>'+
     '<div class="nf"><label>Photos</label><div class="photo-grid" id="nf_photos"></div></div>'+
+    '<div class="nf"><label>Notes</label><div class="note-list" id="nf_notes"></div></div>'+
     '<div class="nf-actions"><button type="button" class="btn-save" onclick="histSaveNotes()">Save notes</button>'+
       '<span class="nf-hint" id="nf_saved"></span>'+
       '<button type="button" class="btn-del" onclick="histDeleteFiring()">Delete firing</button></div>'+
@@ -1763,6 +1772,7 @@ function histPhotoRefresh(){   // redraw markers + timeline + grid after a photo
   if(!histDetail) return;
   histBuildCurve(histDetail); histDrawGraph(); histRenderTimeline(histDetail); histRenderPhotos();
 }
+function histPhotoPick(){ var i=document.getElementById("hist_photo_input"); if(i) i.click(); }
 function histUploadPhoto(input){
   if(!input.files||!input.files[0]||!histDetail) return;
   var isLive = (liveFiringId && histDetail.id===liveFiringId);
@@ -1817,6 +1827,80 @@ function savePhotoNote(file){
     error:function(){ alert("Could not save the photo note."); } });
 }
 
+/* ---- standalone text notes (text without a photo) ---- */
+function histRenderNoteList(){
+  var el=document.getElementById("nf_notes"); if(!el||!histDetail) return;
+  var notes=(histDetail.metadata&&histDetail.metadata.notes)||[];
+  if(!notes.length){ el.innerHTML='<span class="note-empty">No notes yet — use “+ Note” above the graph.</span>'; return; }
+  el.innerHTML = notes.map(function(n){
+    var when=(typeof n.runtime==="number")?('<span class="note-when tnum">'+histFmtClock(n.runtime)+'</span>'):"";
+    return '<div class="note-item" onclick="openNoteEditor(\''+n.id+'\')">'+when+
+      '<span class="note-text">'+histEsc(n.text||"")+'</span>'+
+      '<span class="x" title="remove" onclick="event.stopPropagation();histRemoveNote(\''+n.id+'\')">×</span></div>';
+  }).join("");
+}
+function histNoteRefresh(){   // redraw markers + timeline + list after a note change
+  if(!histDetail) return;
+  histBuildCurve(histDetail); histDrawGraph(); histRenderTimeline(histDetail); histRenderNoteList();
+}
+function histAddNote(){ openNoteEditor(null); }
+function openNoteEditor(nid){
+  if(!histDetail) return;
+  var note = nid ? (((histDetail.metadata&&histDetail.metadata.notes)||[]).filter(function(x){return x.id===nid;})[0]) : null;
+  if(nid && !note) return;
+  var isLive = (liveFiringId && histDetail.id===liveFiringId);
+  var lb=document.getElementById("note_modal");
+  if(!lb){ lb=document.createElement("div"); lb.id="note_modal"; lb.className="note-modal";
+    lb.onclick=function(e){ if(e.target===lb) closeNoteEditor(); };
+    document.body.appendChild(lb); }
+  var when="";
+  if(note && typeof note.runtime==="number") when='<div class="nm-time">📝 at '+histFmtClock(note.runtime)+' elapsed</div>';
+  else if(!note && isLive) when='<div class="nm-time">📝 at '+histFmtClock(liveRuntime)+' elapsed</div>';
+  lb.setAttribute("data-nid", nid||"");
+  lb.innerHTML='<div class="nm-box">'+
+    '<div class="nm-hd">'+(nid?"Edit note":"Add note")+'</div>'+when+
+    '<textarea id="nm_text" placeholder="Type a note…">'+histEsc(note?note.text:"")+'</textarea>'+
+    '<div class="nm-actions">'+
+      (nid?'<button type="button" class="nm-del" onclick="histRemoveNote(\''+nid+'\',true)">Delete</button>':'')+
+      '<button type="button" class="nm-cancel" onclick="closeNoteEditor()">Cancel</button>'+
+      '<button type="button" class="nm-save" onclick="saveNoteEditor()">Save</button>'+
+    '</div></div>';
+  lb.classList.add("open");
+  document.addEventListener("keydown", _nmEsc);
+  var ta=document.getElementById("nm_text"); if(ta){ ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
+}
+function _nmEsc(e){ if(e.key==="Escape") closeNoteEditor(); }
+function closeNoteEditor(){ var lb=document.getElementById("note_modal"); if(lb) lb.classList.remove("open"); document.removeEventListener("keydown",_nmEsc); }
+function saveNoteEditor(){
+  if(!histDetail) return;
+  var lb=document.getElementById("note_modal"); var nid=lb?lb.getAttribute("data-nid"):"";
+  var ta=document.getElementById("nm_text"); var text=ta?ta.value.trim():"";
+  if(!text){ if(nid) histRemoveNote(nid,true); else closeNoteEditor(); return; }
+  if(nid){
+    $.ajax({ url:"/api/firings/"+encodeURIComponent(histDetail.id)+"/notes/"+encodeURIComponent(nid), type:"PATCH",
+      contentType:"application/json", data:JSON.stringify({text:text}),
+      success:function(r){ if(r&&r.success){
+          var arr=(histDetail.metadata.notes)||[]; for(var i=0;i<arr.length;i++){ if(arr[i].id===nid){ arr[i]=r.note; break; } }
+          histNoteRefresh(); closeNoteEditor(); } },
+      error:function(){ alert("Could not save the note."); } });
+  } else {
+    var isLive = (liveFiringId && histDetail.id===liveFiringId);
+    var body={text:text}; if(isLive) body.runtime=liveRuntime;
+    $.ajax({ url:"/api/firings/"+encodeURIComponent(histDetail.id)+"/notes", type:"POST",
+      contentType:"application/json", data:JSON.stringify(body),
+      success:function(r){ if(r&&r.success){
+          (histDetail.metadata.notes=histDetail.metadata.notes||[]).push(r.note); histNoteRefresh(); closeNoteEditor(); }
+        else { alert((r&&r.error)||"Could not add the note."); } },
+      error:function(){ alert("Could not add the note."); } });
+  }
+}
+function histRemoveNote(nid, fromModal){
+  if(!histDetail) return;
+  $.ajax({ url:"/api/firings/"+encodeURIComponent(histDetail.id)+"/notes/"+encodeURIComponent(nid), type:"DELETE",
+    success:function(){ histDetail.metadata.notes=((histDetail.metadata.notes)||[]).filter(function(n){return n.id!==nid;});
+      histNoteRefresh(); if(fromModal) closeNoteEditor(); } });
+}
+
 function histSaveNotes(){
   if(!histDetail) return;
   var patch={ title: document.getElementById("nf_title").value,
@@ -1863,6 +1947,9 @@ function histRenderTimeline(d){
   ((d.metadata&&d.metadata.photos)||[]).forEach(function(p){
     if(typeof p.runtime==="number") rows.push({kind:"photo", rt:p.runtime, p:p});
   });
+  ((d.metadata&&d.metadata.notes)||[]).forEach(function(n){
+    if(typeof n.runtime==="number") rows.push({kind:"note", rt:n.runtime, n:n});
+  });
   rows.sort(function(a,b){ return a.rt-b.rt; });
   var prevDay=null;
   rows.forEach(function(r){
@@ -1897,13 +1984,19 @@ function histRenderTimeline(d){
         '<span class="ev-txt"><b>'+histEsc(title)+'</b>'+(sub?' <span class="ev-sub">— '+histEsc(sub)+'</span>':'')+'</span>';
       row.onclick=function(){ histSelectEvent(r.idx); };
       row.onkeydown=function(ev){ if(ev.key==="Enter"||ev.key===" "){ ev.preventDefault(); histSelectEvent(r.idx); } };
-    } else {
+    } else if(r.kind==="photo"){
       var note=r.p.note?(' — '+histEsc(r.p.note)):"";
       // the photo itself is the bullet in the icon column
       row.innerHTML=timeHtml+
         '<img class="ev-ico-photo" src="/api/firings/'+fid+'/photos/'+encodeURIComponent(r.p.file)+'" '+
         'onclick="openPhotoLightbox(\''+r.p.file+'\')">'+
         '<span class="ev-txt"><b>Photo</b><span class="ev-sub">'+note+'</span></span>';
+    } else {   // standalone text note
+      row.innerHTML=timeHtml+
+        '<span class="ev-ico plain" style="color:var(--muted) !important">📝</span>'+
+        '<span class="ev-txt"><b>Note</b> <span class="ev-sub">— '+histEsc(r.n.text||"")+'</span></span>';
+      row.style.cursor="pointer";
+      row.onclick=(function(id){ return function(){ openNoteEditor(id); }; })(r.n.id);
     }
     tl.appendChild(row);
   });
@@ -1973,11 +2066,12 @@ function histBuildCurve(d){
   var bands=[], open=null;
   (d.events||[]).forEach(function(e){ if(e.type==="power_interruption") open=e.runtime;
     else if(e.type==="resumed"&&open!=null){ bands.push([open,e.runtime]); open=null; } });
-  // photos with a capture runtime become markers on the graph / rows in the timeline
+  // photos/notes with a capture runtime become markers on the graph / rows in the timeline
   var photos=((d.metadata&&d.metadata.photos)||[]).filter(function(p){return typeof p.runtime==="number";});
+  var notes=((d.metadata&&d.metadata.notes)||[]).filter(function(n){return typeof n.runtime==="number";});
   // wall-clock at runtime=0, for a clock-time x-axis (falls back to duration if absent)
   var startMs=null; if(d.summary&&d.summary.started_at){ var sm=Date.parse(d.summary.started_at); if(!isNaN(sm)) startMs=sm; }
-  histCurve={act:act,plan:plan,proj:[],xmax:xmax||1,ymax:ymax,events:d.events||[],bands:bands,photos:photos,startMs:startMs};
+  histCurve={act:act,plan:plan,proj:[],xmax:xmax||1,ymax:ymax,events:d.events||[],bands:bands,photos:photos,notes:notes,startMs:startMs};
 }
 
 // Live curve: actual from the /status websocket stream (graph.live.data) and
@@ -1999,10 +2093,11 @@ function histBuildCurveLive(){
   (histDetail.events||[]).forEach(function(e){ if(e.type==="power_interruption") open=e.runtime;
     else if(e.type==="resumed"&&open!=null){ bands.push([open,e.runtime]); open=null; } });
   var photos=((histDetail.metadata&&histDetail.metadata.photos)||[]).filter(function(p){return typeof p.runtime==="number";});
+  var notes=((histDetail.metadata&&histDetail.metadata.notes)||[]).filter(function(n){return typeof n.runtime==="number";});
   // live: graph_start_ms is the wall-clock at runtime=0; fall back to the record's started_at
   var startMs=graph_start_ms;
   if(startMs==null && histDetail.summary && histDetail.summary.started_at){ var sm=Date.parse(histDetail.summary.started_at); if(!isNaN(sm)) startMs=sm; }
-  histCurve={act:act,plan:plan,proj:proj,xmax:xmax||1,ymax:ymax,events:histDetail.events||[],bands:bands,photos:photos,startMs:startMs};
+  histCurve={act:act,plan:plan,proj:proj,xmax:xmax||1,ymax:ymax,events:histDetail.events||[],bands:bands,photos:photos,notes:notes,startMs:startMs};
 }
 var _liveTickAt=0;
 function histLiveTick(){   // called from the /status handler; redraw live curve, throttled
@@ -2102,6 +2197,17 @@ function histDrawGraph(){
     g.fillText("📷", x, m.t+ph-1);
   });
 
+  // note markers (memo glyph) along the bottom axis, click-to-edit
+  histNotePins=[];
+  (histCurve.notes||[]).forEach(function(n){
+    var x=X(n.runtime||0);
+    histNotePins.push({x:x, note:n});
+    g.strokeStyle="rgba(107,114,128,.45)"; g.lineWidth=1; g.setLineDash([2,3]);
+    g.beginPath(); g.moveTo(x,m.t); g.lineTo(x,m.t+ph); g.stroke(); g.setLineDash([]);
+    g.font="13px -apple-system,system-ui,sans-serif"; g.textAlign="center"; g.textBaseline="bottom";
+    g.fillText("📝", x, m.t+ph-1);
+  });
+
   histDrawCrosshair();
 }
 
@@ -2149,11 +2255,12 @@ document.addEventListener("click",function(e){
   var cv=document.getElementById("hist_graph"); if(!cv) return; var r=cv.getBoundingClientRect();
   if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom) return;
   var x=e.clientX-r.left, y=e.clientY-r.top;
-  // bottom band → photo (camera) markers
-  if(y > cv.clientHeight-44 && histPhotoPins.length){
-    var bp=null, bbd=16;
-    histPhotoPins.forEach(function(p){ var dd=Math.abs(p.x-x); if(dd<bbd){ bbd=dd; bp=p; } });
-    if(bp){ openPhotoLightbox(bp.photo.file); return; }
+  // bottom band → photo (camera) / note (memo) markers, nearest wins
+  if(y > cv.clientHeight-44 && (histPhotoPins.length || histNotePins.length)){
+    var hit=null, bbd=16;
+    histPhotoPins.forEach(function(p){ var dd=Math.abs(p.x-x); if(dd<bbd){ bbd=dd; hit={kind:"photo",p:p}; } });
+    histNotePins.forEach(function(p){ var dd=Math.abs(p.x-x); if(dd<bbd){ bbd=dd; hit={kind:"note",p:p}; } });
+    if(hit){ if(hit.kind==="photo") openPhotoLightbox(hit.p.photo.file); else openNoteEditor(hit.p.note.id); return; }
   }
   if(!histPins.length) return;
   var best=null, bd=14;

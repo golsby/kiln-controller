@@ -214,6 +214,53 @@ def handle_get_photo(fid, name):
     return resp
 
 
+@app.route('/api/firings/<fid>/notes', method='POST')
+def handle_add_note(fid):
+    '''Add a standalone text note to a firing.'''
+    bottle.response.content_type = 'application/json'
+    body = bottle.request.json or {}
+    text = body.get('text', '')
+    if not str(text).strip():
+        bottle.response.status = 400
+        return json.dumps({"error": "empty note"})
+    # optional capture time (firing-clock seconds) sent when noting during a run
+    runtime = body.get('runtime')
+    if not isinstance(runtime, (int, float)):
+        runtime = None
+    live = _live_recorder(fid)
+    note = _io(live.add_note, text, runtime) if live else \
+        _io(firingStore.add_note, config.firings_directory, fid, text, runtime)
+    if note is None:
+        bottle.response.status = 404
+        return json.dumps({"error": "firing not found"})
+    return json.dumps({"success": True, "note": note})
+
+
+@app.route('/api/firings/<fid>/notes/<nid>', method='PATCH')
+def handle_update_note(fid, nid):
+    '''Set a note's text / placement (runtime).'''
+    bottle.response.content_type = 'application/json'
+    patch = bottle.request.json or {}
+    live = _live_recorder(fid)
+    note = live.update_note(nid, patch) if live else \
+        firingStore.update_note(config.firings_directory, fid, nid, patch)
+    if note is None:
+        bottle.response.status = 404
+        return json.dumps({"error": "note not found"})
+    return json.dumps({"success": True, "note": note})
+
+
+@app.route('/api/firings/<fid>/notes/<nid>', method='DELETE')
+def handle_delete_note(fid, nid):
+    bottle.response.content_type = 'application/json'
+    live = _live_recorder(fid)
+    if live:
+        live.delete_note(nid)
+    else:
+        firingStore.delete_note(config.firings_directory, fid, nid)
+    return json.dumps({"success": True})
+
+
 @app.post('/api')
 def handle_api():
     log.debug("/api is alive")

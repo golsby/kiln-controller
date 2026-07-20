@@ -110,6 +110,7 @@ def _empty_metadata():
             "went_wrong": "",
         },
         "photos": [],
+        "notes": [],
     }
 
 
@@ -263,6 +264,31 @@ class FiringRecorder(object):
         with self._record_lock:
             photos = self.record.get("metadata", {}).get("photos", [])
             self.record["metadata"]["photos"] = [p for p in photos if p.get("file") != name]
+            self._write_record()
+        return True
+
+    def add_note(self, text, runtime=None):
+        if runtime is None:
+            runtime = self._last_runtime
+        with self._record_lock:
+            notes = self.record.setdefault("metadata", _empty_metadata()).setdefault("notes", [])
+            e = _note_entry(_next_note_id(notes), text, runtime)
+            notes.append(e)
+            self._write_record()
+        return e
+
+    def update_note(self, nid, patch):
+        with self._record_lock:
+            notes = self.record.setdefault("metadata", _empty_metadata()).setdefault("notes", [])
+            e = _merge_note(notes, nid, patch)
+            if e is not None:
+                self._write_record()
+        return e
+
+    def delete_note(self, nid):
+        with self._record_lock:
+            notes = self.record.setdefault("metadata", _empty_metadata()).get("notes", [])
+            self.record["metadata"]["notes"] = [n for n in notes if n.get("id") != nid]
             self._write_record()
         return True
 
@@ -591,6 +617,37 @@ def _merge_photo(photos, name, patch):
     return None
 
 
+def _next_note_id(notes):
+    '''Lowest free "note-N" id for the given notes list.'''
+    existing = {n.get("id") for n in notes}
+    n = 1
+    while ("note-%d" % n) in existing:
+        n += 1
+    return "note-%d" % n
+
+
+def _note_entry(nid, text, runtime=None):
+    '''A standalone text-note metadata entry. `runtime` (firing-clock seconds)
+    places it on the timeline/graph; None for notes added outside a firing.'''
+    e = {"id": nid, "text": _clean_str(text, 2000)}
+    if isinstance(runtime, (int, float)):
+        e["runtime"] = round(runtime, 1)
+    return e
+
+
+def _merge_note(notes, nid, patch):
+    '''Merge text/runtime into the matching note entry; returns it or None.'''
+    for n in notes:
+        if n.get("id") == nid:
+            if "text" in patch:
+                n["text"] = _clean_str(patch.get("text"), 2000)
+            if "runtime" in patch:
+                rt = patch["runtime"]
+                n["runtime"] = round(rt, 1) if isinstance(rt, (int, float)) else None
+            return n
+    return None
+
+
 def _save_upload(photos_dir, upload):
     '''Save a bottle FileUpload under a server-chosen, collision-free name.
     Returns the filename, or None if the type isn't an allowed image.'''
@@ -691,3 +748,48 @@ def photo_fullpath(firings_dir, fid, name):
         return None
     fpath = os.path.join(dirpath, "photos", name)
     return fpath if os.path.isfile(fpath) else None
+
+
+def add_note(firings_dir, fid, text, runtime=None):
+    '''Register a standalone text note in metadata (disk path). `runtime` places
+    it on the timeline/graph. Returns the new note entry, or None on failure.'''
+    dirpath = _bundle_dir(firings_dir, fid)
+    if dirpath is None:
+        return None
+    rec = _read_record(dirpath)
+    if rec is None:
+        return None
+    notes = rec.setdefault("metadata", _empty_metadata()).setdefault("notes", [])
+    e = _note_entry(_next_note_id(notes), text, runtime)
+    notes.append(e)
+    _atomic_write_json(os.path.join(dirpath, RECORD), rec)
+    log.info("added note %s to firing %s" % (e["id"], fid))
+    return e
+
+
+def update_note(firings_dir, fid, nid, patch):
+    '''Set a note's text/runtime (disk path). Returns the note entry or None.'''
+    dirpath = _bundle_dir(firings_dir, fid)
+    if dirpath is None:
+        return None
+    rec = _read_record(dirpath)
+    if rec is None:
+        return None
+    notes = rec.setdefault("metadata", _empty_metadata()).setdefault("notes", [])
+    e = _merge_note(notes, nid, patch)
+    if e is not None:
+        _atomic_write_json(os.path.join(dirpath, RECORD), rec)
+    return e
+
+
+def delete_note(firings_dir, fid, nid):
+    '''Remove one note's metadata entry. Returns True on success.'''
+    dirpath = _bundle_dir(firings_dir, fid)
+    if dirpath is None:
+        return False
+    rec = _read_record(dirpath)
+    if rec is not None:
+        notes = rec.setdefault("metadata", _empty_metadata()).get("notes", [])
+        rec["metadata"]["notes"] = [n for n in notes if n.get("id") != nid]
+        _atomic_write_json(os.path.join(dirpath, RECORD), rec)
+    return True
