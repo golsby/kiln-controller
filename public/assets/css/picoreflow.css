@@ -504,6 +504,15 @@ body {
     box-shadow: var(--shadow); padding: 14px 18px;
 }
 
+/* session-expired (Cloudflare Access) — actionable, distinct blue from the
+   transient orange reconnect banner so it reads as "do something", not "wait". */
+#auth_banner.alert-warning {
+    border: none; border-radius: 14px;
+    background: rgba(10,132,255,.12); color: #0a4a99;
+    box-shadow: var(--shadow); padding: 14px 18px;
+}
+#auth_banner a { color: inherit; font-weight: 600; text-decoration: underline; }
+
 /* ---- segment editor ---- */
 /* let wide tables scroll horizontally instead of being clipped (overrides
    the legacy .table-responsive overflow:hidden) */

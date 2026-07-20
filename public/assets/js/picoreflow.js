@@ -1009,11 +1009,62 @@ $(document).ready(function()
         // seconds until the service comes back.
 
         var _reconnect_timer = null;
+        var _authExpired = false;
 
         function setConnected(connected)
         {
-            if (connected) { $('#conn_banner').hide(); }
-            else           { $('#conn_banner').show(); }
+            if (connected)
+            {
+                _authExpired = false;
+                $('#conn_banner').hide();
+                $('#auth_banner').hide();
+            }
+            else
+            {
+                // A dropped status socket can mean the backend restarted OR the
+                // Cloudflare Access session expired. A failed WS handshake hides
+                // its HTTP status from JS, so the socket alone can't tell us
+                // which. Show the generic "reconnecting" banner now, then probe a
+                // cheap GET (whose status we *can* read) to detect the auth case
+                // and swap in the "please re-login" banner instead.
+                if (!_authExpired) { $('#conn_banner').show(); }
+                probeAuth();
+            }
+        }
+
+        // Distinguish "backend/tunnel down" from "Cloudflare Access session
+        // expired". fetch() exposes the HTTP status the WebSocket handshake
+        // won't: Access returns 401/403 (or 302-redirects to its login) once the
+        // access cookie lapses, while a live-but-restarting backend answers 200.
+        function probeAuth()
+        {
+            fetch("/api/stats", { cache: "no-store", credentials: "same-origin", redirect: "manual" })
+                .then(function(r)
+                {
+                    // The status socket may have reconnected while this was in
+                    // flight; if so, setConnected(true) already fixed the banners.
+                    if (ws_status && ws_status.readyState === 1) { return; }
+
+                    if (r.status === 401 || r.status === 403 || r.type === "opaqueredirect")
+                    {
+                        _authExpired = true;
+                        $('#conn_banner').hide();
+                        $('#auth_banner').show();
+                    }
+                    else
+                    {
+                        // Reachable and authorized: the drop is a backend/tunnel
+                        // blip, not an auth problem. Keep the generic banner.
+                        _authExpired = false;
+                        $('#auth_banner').hide();
+                        $('#conn_banner').show();
+                    }
+                })
+                .catch(function()
+                {
+                    // Network error (backend/tunnel truly unreachable): leave the
+                    // generic reconnecting banner up.
+                });
         }
 
         function scheduleReconnect()
