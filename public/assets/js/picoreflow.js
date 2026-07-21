@@ -1339,6 +1339,7 @@ $(document).ready(function()
         {
             console.log (e.data);
             x = JSON.parse(e.data);
+            var _prevScale = temp_scale;
             temp_scale = x.temp_scale;
             time_scale_slope = x.time_scale_slope;
             time_scale_profile = x.time_scale_profile;
@@ -1349,11 +1350,18 @@ $(document).ready(function()
 
             if (temp_scale == "c") {temp_scale_display = "C";} else {temp_scale_display = "F";}
 
-            // if the history view rendered before the scale arrived (e.g. a cold
-            // #history deep-link), re-render it now with the right unit
-            if ($("#history_view").is(":visible") && histList) {
+            // Re-render the open history view only when the temp scale actually
+            // changed — a cold #history deep-link (scale arrives after the first
+            // render) or a genuine unit switch — NOT on every config-socket
+            // (re)connect. The config socket re-sends on every reconnect (a network
+            // blip, a laptop wake, a Cloudflare tunnel hiccup), and blindly
+            // re-rendering here rebuilds the notes card, discarding whatever the
+            // user was typing. Rebuilding also drops focus mid-edit, so additionally
+            // skip while notes are being edited (the localStorage draft is the
+            // backstop if a render does slip through, e.g. a real unit change).
+            if ($("#history_view").is(":visible") && histList && temp_scale !== _prevScale) {
                 renderHistList(histDetail ? histDetail.id : null);
-                if (histDetail) renderHistDetail(histDetail);
+                if (histDetail && !histNotesDirty()) renderHistDetail(histDetail);
             }
 
             $('#act_temp_scale').html('º'+temp_scale_display);
@@ -1665,10 +1673,17 @@ function renderHistDetail(d, target){
   // a custom title (if set) acts as the firing's display name; the profile name
   // becomes secondary context
   var heading = m.title || d.profile.name;
-  // seed the editable-notes state for this firing
+  // seed the editable-notes state for this firing, then let a pending unsaved
+  // draft (localStorage) override it so an interrupted edit survives a re-render
   histRating = o.rating || null;
   histEditTags = (m.tags||[]).slice();
   histEditDefects = (o.defects||[]).slice();
+  var _draft = histLoadDraft(d.id);
+  if(_draft){
+    histRating = _draft.rating || null;
+    histEditTags = (_draft.tags||[]).slice();
+    histEditDefects = (_draft.defects||[]).slice();
+  }
   var html =
     (live ? "" : '<button type="button" class="hist-back" onclick="histBackToList()"><span class="glyphicon glyphicon-chevron-left"></span> All firings</button>')+
     '<div class="detail-head">'+
@@ -1706,6 +1721,12 @@ function renderHistDetail(d, target){
     '</div>'+
     '<div class="hist-card panel-pad notes-card" id="notes_card"><h2>Firing notes</h2>'+renderHistNotes(d)+'</div>';
   $(target).html(html);
+  // free-text fields default to the saved values in the markup; a draft overrides
+  if(_draft){
+    var _t=document.getElementById("nf_title"); if(_t) _t.value=_draft.title||"";
+    var _s=document.getElementById("nf_summary"); if(_s) _s.value=_draft.summary||"";
+    var _sv=document.getElementById("nf_saved"); if(_sv){ _sv.style.color=""; _sv.textContent="Unsaved draft restored"; }
+  }
   histBuildCurve(d);
   histRenderTimeline(d);
   histDrawGraph();
@@ -1716,12 +1737,12 @@ function renderHistDetail(d, target){
 function renderHistNotes(d){
   var m=d.metadata||{}; var o=m.outcome||{};
   return '<div class="notes">'+
-    '<div class="nf"><label>Title</label><input id="nf_title" class="nf-input" maxlength="200" placeholder="e.g. Blue cast — 3 pieces" value="'+histEsc(m.title||"")+'"></div>'+
+    '<div class="nf"><label>Title</label><input id="nf_title" class="nf-input" maxlength="200" placeholder="e.g. Blue cast — 3 pieces" oninput="histSaveDraft()" value="'+histEsc(m.title||"")+'"></div>'+
     '<div class="nf-row">'+
       '<div class="nf"><label>Rating</label><div class="stars" id="nf_stars"></div></div>'+
       '<div class="nf"><label>Tags</label><div class="chips" id="nf_tags"></div></div>'+
     '</div>'+
-    '<div class="nf"><label>What happened</label><textarea id="nf_summary" class="nf-area" maxlength="5000" placeholder="Outcome, observations…">'+histEsc(o.summary||"")+'</textarea></div>'+
+    '<div class="nf"><label>What happened</label><textarea id="nf_summary" class="nf-area" maxlength="5000" placeholder="Outcome, observations…" oninput="histSaveDraft()">'+histEsc(o.summary||"")+'</textarea></div>'+
     '<div class="nf"><label>Defects</label><div class="chips" id="nf_defects"></div></div>'+
     '<div class="nf"><label>Photos</label><div class="photo-grid" id="nf_photos"></div></div>'+
     '<div class="nf"><label>Notes</label><div class="note-list" id="nf_notes"></div></div>'+
@@ -1736,7 +1757,7 @@ function histRenderStars(){
   var h=""; for(var i=1;i<=5;i++) h+='<span data-n="'+i+'" onclick="histSetRating('+i+')" class="'+(histRating&&i<=histRating?"on":"")+'">★</span>';
   el.innerHTML=h;
 }
-function histSetRating(n){ histRating=(histRating===n?null:n); histRenderStars(); }
+function histSetRating(n){ histRating=(histRating===n?null:n); histRenderStars(); histSaveDraft(); }
 
 function histRenderTags(){
   var el=document.getElementById("nf_tags"); if(!el) return;
@@ -1753,9 +1774,10 @@ function histChipKey(e, kind){
   e.preventDefault(); var v=e.target.value.trim(); if(!v) return;
   if(kind==="tag"){ histEditTags.push(v); histRenderTags(); var i=document.getElementById("nf_tag_input"); if(i) i.focus(); }
   else { histEditDefects.push(v); histRenderDefects(); var j=document.getElementById("nf_defect_input"); if(j) j.focus(); }
+  histSaveDraft();
 }
-function histRemoveTag(i){ histEditTags.splice(i,1); histRenderTags(); }
-function histRemoveDefect(i){ histEditDefects.splice(i,1); histRenderDefects(); }
+function histRemoveTag(i){ histEditTags.splice(i,1); histRenderTags(); histSaveDraft(); }
+function histRemoveDefect(i){ histEditDefects.splice(i,1); histRenderDefects(); histSaveDraft(); }
 
 function histRenderPhotos(){
   var el=document.getElementById("nf_photos"); if(!el||!histDetail) return;
@@ -1901,15 +1923,50 @@ function histRemoveNote(nid, fromModal){
       histNoteRefresh(); if(fromModal) closeNoteEditor(); } });
 }
 
+/* ---- unsaved-notes draft (localStorage) ------------------------------------
+   The notes fields (title / "what happened" / rating / tags / defects) are only
+   persisted server-side on "Save notes". To survive an accidental re-render or a
+   full page reload before that, mirror them to localStorage on every edit, keyed
+   by firing id; renderHistDetail restores a pending draft, and a successful save
+   (or a delete) clears it. */
+function histDraftKey(id){ return "kiln_notes_draft_" + id; }
+function histCollectDraft(){
+  var t=document.getElementById("nf_title"), s=document.getElementById("nf_summary");
+  return { title: t?t.value:"", summary: s?s.value:"",
+    rating: histRating, tags: histEditTags.slice(), defects: histEditDefects.slice() };
+}
+function histSaveDraft(){
+  if(!histDetail) return;
+  try { localStorage.setItem(histDraftKey(histDetail.id), JSON.stringify(histCollectDraft())); } catch(e){}
+  var el=document.getElementById("nf_saved"); if(el){ el.style.color=""; el.textContent="Unsaved draft"; }
+}
+function histClearDraft(id){ try { localStorage.removeItem(histDraftKey(id)); } catch(e){} }
+function histLoadDraft(id){
+  try { var v=localStorage.getItem(histDraftKey(id)); return v?JSON.parse(v):null; } catch(e){ return null; }
+}
+function histHasDraft(){
+  if(!histDetail) return false;
+  try { return !!localStorage.getItem(histDraftKey(histDetail.id)); } catch(e){ return false; }
+}
+// True while the notes card is being edited: either focus is inside it, or an
+// unsaved draft is pending. Callers use this to avoid clobbering an active edit.
+function histNotesDirty(){
+  var el=document.activeElement;
+  if(el && el.closest && el.closest("#notes_card")) return true;
+  return histHasDraft();
+}
+
 function histSaveNotes(){
   if(!histDetail) return;
+  var id=histDetail.id;
   var patch={ title: document.getElementById("nf_title").value,
     tags: histEditTags,
     outcome: { rating: histRating, summary: document.getElementById("nf_summary").value, defects: histEditDefects } };
-  $.ajax({ url:"/api/firings/"+encodeURIComponent(histDetail.id), type:"PATCH",
+  $.ajax({ url:"/api/firings/"+encodeURIComponent(id), type:"PATCH",
     contentType:"application/json", data:JSON.stringify(patch),
     success:function(r){
       if(r&&r.success){ histDetail.metadata=r.metadata;
+        histClearDraft(id);   // saved server-side, drop the local draft
         // reflect a (possibly new) title in the list rail + detail heading
         var it=(histList||[]).filter(function(f){return f.id===histDetail.id;})[0]; if(it) it.title=r.metadata.title;
         renderHistList(histDetail.id);
@@ -1926,6 +1983,7 @@ function histDeleteFiring(){
   var id=histDetail.id;
   $.ajax({ url:"/api/firings/"+encodeURIComponent(id), type:"DELETE",
     success:function(){
+      histClearDraft(id);
       histList=(histList||[]).filter(function(f){return f.id!==id;}); histDetail=null;
       $("#history_view").removeClass("detail-open");
       if(histList.length){ renderHistList(null); if(window.innerWidth>900) loadFiring(histList[0].id); else $("#hist_main").html(""); }

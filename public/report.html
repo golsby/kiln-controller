@@ -25,10 +25,15 @@
   .rpt-photo .cap { font-size:13px; color:#374151; margin-top:5px; }
   .rpt-notelist { display:flex; flex-direction:column; gap:8px; }
   .rpt-noteitem { font-size:14px; color:#374151; padding:8px 12px; border:1px solid #e6e9ef; border-radius:10px; background:#fbfcfe; }
+  .rpt-sched .sched-flow { display:flex; flex-wrap:wrap; gap:8px; }
+  .sched-seg { display:inline-flex; align-items:center; gap:7px; border:1px solid #e6e9ef; border-radius:9px; padding:6px 11px; background:#fbfcfe; font-size:13px; color:#6b7280; }
+  .sched-seg .sn { display:inline-flex; align-items:center; justify-content:center; min-width:18px; height:18px; border-radius:5px; background:#eef1f6; color:#6b7280; font-size:11px; font-weight:700; }
+  .sched-seg .sv { font-weight:600; color:#11151c; }
+  .sched-seg .sarrow { color:#b6bcc7; }
   @media print {
     body.hist-scope { padding:0; max-width:none; }
     .rpt-print { display:none; }
-    .rpt-section, .hist-card, .rpt-photo, .ev { break-inside:avoid; }
+    .rpt-section, .hist-card, .rpt-photo, .ev, .sched-seg { break-inside:avoid; }
     .hist-scope #hist_graph { height:300px !important; }
   }
  </style>
@@ -54,6 +59,18 @@
        notes.map(function(n){ return '<div class="rpt-noteitem">'+histEsc(n.text||"").replace(/\n/g,"<br>")+'</div>'; }).join("")+
        '</div></div>';
    }
+   function reportSchedule(d){
+     // the schedule that was started, compact "Rate › Temp › Hold" per segment
+     var segs=deriveSegments(d.profile||{}); if(!segs.length) return "";
+     var tu="°"+temp_scale_display, arr='<span class="sarrow">›</span>';
+     var rows=segs.map(function(s,i){
+       var rate=s.rate>0 ? '<span class="sv">'+Math.round(s.rate)+tu+'/hr</span>' : '<span class="sv">hold</span>';
+       var tgt='<span class="sv">'+Math.round(s.target)+tu+'</span>';
+       var hold='<span class="sv">'+(s.hold>0?formatHold(s.hold):"—")+'</span>';
+       return '<span class="sched-seg"><span class="sn">'+(i+1)+'</span>'+rate+arr+tgt+arr+hold+'</span>';
+     }).join("");
+     return '<div class="rpt-section rpt-sched"><h2>Firing schedule</h2><div class="sched-flow">'+rows+'</div></div>';
+   }
    function reportPhotos(d){
      var photos=(d.metadata&&d.metadata.photos)||[]; if(!photos.length) return "";
      var id=encodeURIComponent(d.id);
@@ -74,12 +91,27 @@
      var s=d.summary||{}, m=d.metadata||{}, o=m.outcome||{};
      var heading=m.title||d.profile.name;
      document.title="Firing Report — "+heading;
+     // end wall-clock = start + duration (no explicit ended_at in the summary);
+     // parse the naive start the same way histFmtDate does, then add the duration
+     var endStr="";
+     if(s.started_at && typeof s.duration_s==="number"){
+       var _sd=new Date(String(s.started_at).replace("Z",""));
+       if(!isNaN(_sd)){ var _ed=new Date(_sd.getTime()+s.duration_s*1000);
+         endStr=_ed.toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"})+" · "+
+                _ed.toLocaleTimeString(undefined,{hour:"numeric",minute:"2-digit"}); }
+     }
+     var sub=["Started "+histFmtDate(s.started_at)];
+     if(endStr) sub.push("Ended "+endStr);
+     if(s.status) sub.push(s.status);
+     if(m.title) sub.push(histEsc(d.profile.name));
+     if(d.imported) sub.push("imported from log");
      document.getElementById("report").innerHTML=
        '<div class="rpt-head"><div><h1 class="rpt-title">'+histEsc(heading)+'</h1>'+
-         '<div class="rpt-sub">'+histFmtDate(s.started_at)+' · '+(s.status||"")+
-         (m.title?(' · '+histEsc(d.profile.name)):"")+(d.imported?" · imported from log":"")+'</div></div>'+
+         '<div class="rpt-sub">'+sub.join(" · ")+'</div></div>'+
          '<div class="rpt-print"><button onclick="window.print()">Print</button></div></div>'+
        '<div class="stats tnum">'+histStatsHtml(s)+'</div>'+
+       '<div class="rpt-section rpt-notes"><h2>Notes</h2>'+reportNotes(m,o)+'</div>'+
+       reportSchedule(d)+
        '<div class="rpt-section"><div class="hist-card"><div class="card-hd"><h3>Planned vs. actual</h3>'+
          '<div class="legend"><span class="lg"><span class="swatch" style="background:var(--heat)"></span>Actual</span>'+
          '<span class="lg"><span class="swatch dash"></span>Planned</span>'+
@@ -87,7 +119,6 @@
          '<span class="lg">📷 Photo</span><span class="lg">📝 Note</span></div></div>'+
          '<div class="graph-wrap"><canvas id="hist_graph"></canvas><div class="hist-tip" id="hist_tip"></div></div></div></div>'+
        '<div class="rpt-section"><h2>Event timeline</h2><div class="timeline" id="hist_timeline"></div></div>'+
-       '<div class="rpt-section rpt-notes"><h2>Notes</h2>'+reportNotes(m,o)+'</div>'+
        reportNoteList(d)+
        reportPhotos(d);
      histBuildCurve(d); histDrawGraph(); histRenderTimeline(d);
