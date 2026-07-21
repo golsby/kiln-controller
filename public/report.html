@@ -26,10 +26,12 @@
   .rpt-notelist { display:flex; flex-direction:column; gap:8px; }
   .rpt-noteitem { font-size:14px; color:#374151; padding:8px 12px; border:1px solid #e6e9ef; border-radius:10px; background:#fbfcfe; }
   .sched-table { border-collapse:collapse; font-size:14px; }
-  .sched-table th, .sched-table td { text-align:left; padding:6px 18px 6px 0; border-bottom:1px solid #eef1f6; }
+  .sched-table th, .sched-table td { text-align:right; padding:6px 0 6px 22px; border-bottom:1px solid #eef1f6; }
+  .sched-table th:first-child, .sched-table td:first-child { padding-left:0; }
   .sched-table th { font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:#6b7280; font-weight:600; }
-  .sched-table td { color:#11151c; }
-  .sched-table td.sn, .sched-table th:first-child { color:#6b7280; font-weight:600; padding-right:14px; }
+  .sched-table td { color:#11151c; font-variant-numeric:tabular-nums;
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace; }
+  .sched-table td.sn, .sched-table th:first-child { color:#6b7280; font-weight:600; }
   @media print {
     body.hist-scope { padding:0; max-width:none; }
     .rpt-print { display:none; }
