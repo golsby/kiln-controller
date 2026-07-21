@@ -25,15 +25,16 @@
   .rpt-photo .cap { font-size:13px; color:#374151; margin-top:5px; }
   .rpt-notelist { display:flex; flex-direction:column; gap:8px; }
   .rpt-noteitem { font-size:14px; color:#374151; padding:8px 12px; border:1px solid #e6e9ef; border-radius:10px; background:#fbfcfe; }
-  .rpt-sched .sched-flow { display:flex; flex-wrap:wrap; gap:8px; }
-  .sched-seg { display:inline-flex; align-items:center; gap:7px; border:1px solid #e6e9ef; border-radius:9px; padding:6px 11px; background:#fbfcfe; font-size:13px; color:#6b7280; }
-  .sched-seg .sn { display:inline-flex; align-items:center; justify-content:center; min-width:18px; height:18px; border-radius:5px; background:#eef1f6; color:#6b7280; font-size:11px; font-weight:700; }
-  .sched-seg .sv { font-weight:600; color:#11151c; }
-  .sched-seg .sarrow { color:#b6bcc7; }
+  .sched-table { border-collapse:collapse; font-size:14px; }
+  .sched-table th, .sched-table td { text-align:left; padding:6px 18px 6px 0; border-bottom:1px solid #eef1f6; }
+  .sched-table th { font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:#6b7280; font-weight:600; }
+  .sched-table td { color:#11151c; }
+  .sched-table td.sn, .sched-table th:first-child { color:#6b7280; font-weight:600; padding-right:14px; }
   @media print {
     body.hist-scope { padding:0; max-width:none; }
     .rpt-print { display:none; }
-    .rpt-section, .hist-card, .rpt-photo, .ev, .sched-seg { break-inside:avoid; }
+    .rpt-section, .hist-card, .rpt-photo, .ev { break-inside:avoid; }
+    .sched-table tr { break-inside:avoid; }
     .hist-scope #hist_graph { height:300px !important; }
   }
  </style>
@@ -60,16 +61,18 @@
        '</div></div>';
    }
    function reportSchedule(d){
-     // the schedule that was started, compact "Rate › Temp › Hold" per segment
+     // the schedule that was started, as a Rate / Temp / Hold table
      var segs=deriveSegments(d.profile||{}); if(!segs.length) return "";
-     var tu="°"+temp_scale_display, arr='<span class="sarrow">›</span>';
+     var tu="°"+temp_scale_display;
      var rows=segs.map(function(s,i){
-       var rate=s.rate>0 ? '<span class="sv">'+Math.round(s.rate)+tu+'/hr</span>' : '<span class="sv">hold</span>';
-       var tgt='<span class="sv">'+Math.round(s.target)+tu+'</span>';
-       var hold='<span class="sv">'+(s.hold>0?formatHold(s.hold):"—")+'</span>';
-       return '<span class="sched-seg"><span class="sn">'+(i+1)+'</span>'+rate+arr+tgt+arr+hold+'</span>';
+       var rate=s.rate>0 ? (Math.round(s.rate)+tu+"/hr") : "hold";
+       var tgt=Math.round(s.target)+tu;
+       var hold=s.hold>0?formatHold(s.hold):"—";
+       return '<tr><td class="sn">'+(i+1)+'</td><td>'+rate+'</td><td>'+tgt+'</td><td>'+hold+'</td></tr>';
      }).join("");
-     return '<div class="rpt-section rpt-sched"><h2>Firing schedule</h2><div class="sched-flow">'+rows+'</div></div>';
+     return '<div class="rpt-section rpt-sched"><h2>Firing schedule</h2>'+
+       '<table class="sched-table"><thead><tr><th>#</th><th>Rate</th><th>Target</th><th>Hold</th></tr></thead>'+
+       '<tbody>'+rows+'</tbody></table></div>';
    }
    function reportPhotos(d){
      var photos=(d.metadata&&d.metadata.photos)||[]; if(!photos.length) return "";
