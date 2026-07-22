@@ -1633,12 +1633,16 @@ function renderHistList(selId){
   var html="";
   histList.forEach(function(f){
     var s=f.summary||{};
+    var thumb = f.primary_photo ?
+      '<img class="fc-thumb" src="/api/firings/'+encodeURIComponent(f.id)+'/photos/'+encodeURIComponent(f.primary_photo)+'" alt="">' : '';
     html += '<button type="button" class="firing-card'+(f.id===selId?" sel":"")+'" onclick="loadFiring(\''+f.id+'\')">'+
+      thumb+
+      '<div class="fc-body">'+
       '<div class="fc-top"><span class="fc-date tnum">'+histFmtDate(s.started_at)+'</span>'+
       '<span class="pill '+(s.status||"")+'">'+(s.status||"")+'</span></div>'+
       '<div class="fc-name">'+histEsc(f.title||f.profile_name||"—")+'</div>'+
       '<div class="fc-meta tnum"><span><b>'+Math.round(s.max_temp||0)+'</b>'+histTU()+'</span>'+
-      '<span><b>'+histFmtDur(s.duration_s||0)+'</b></span></div></button>';
+      '<span><b>'+histFmtDur(s.duration_s||0)+'</b></span></div></div></button>';
   });
   $("#hist_list").html(html);
 }
@@ -1779,16 +1783,44 @@ function histChipKey(e, kind){
 function histRemoveTag(i){ histEditTags.splice(i,1); histRenderTags(); histSaveDraft(); }
 function histRemoveDefect(i){ histEditDefects.splice(i,1); histRenderDefects(); histSaveDraft(); }
 
+// the photo to feature for a firing: the chosen primary if it still names an
+// existing photo, else the first photo, else null. Mirrors _resolved_primary
+// on the backend so the report/list agree with the editor.
+function histResolvedPrimary(m){
+  var photos=(m&&m.photos)||[];
+  if(!photos.length) return null;
+  var pref=m.primary_photo;
+  if(pref){ for(var i=0;i<photos.length;i++) if(photos[i].file===pref) return pref; }
+  return photos[0].file;
+}
 function histRenderPhotos(){
   var el=document.getElementById("nf_photos"); if(!el||!histDetail) return;
   var id=encodeURIComponent(histDetail.id);
   var photos=(histDetail.metadata&&histDetail.metadata.photos)||[];
+  var prim=histResolvedPrimary(histDetail.metadata||{});
   el.innerHTML = photos.map(function(p){
-    return '<div class="photo-thumb'+(p.note?" has-note":"")+'">'+
+    var isP=(p.file===prim);
+    return '<div class="photo-thumb'+(p.note?" has-note":"")+(isP?" primary":"")+'">'+
       '<img src="/api/firings/'+id+'/photos/'+encodeURIComponent(p.file)+'" alt="firing photo" onclick="openPhotoLightbox(\''+p.file+'\')">'+
+      '<span class="star'+(isP?" on":"")+'" title="'+(isP?"Primary photo":"Make primary")+'" onclick="event.stopPropagation();histSetPrimary(\''+p.file+'\')">'+(isP?"★":"☆")+'</span>'+
       '<span class="x" title="remove" onclick="histRemovePhoto(\''+p.file+'\')">×</span></div>';
   }).join("")+
   '<label class="photo-add">+ Photo<input type="file" accept="image/*" style="display:none" onchange="histUploadPhoto(this)"></label>';
+}
+function histSetPrimary(file){
+  if(!histDetail) return;
+  var m=histDetail.metadata||(histDetail.metadata={});
+  // toggle off if the already-primary star is clicked (falls back to first photo)
+  var next=(m.primary_photo===file)?"":file;
+  $.ajax({ url:"/api/firings/"+encodeURIComponent(histDetail.id), type:"PATCH",
+    contentType:"application/json", data:JSON.stringify({primary_photo:next}),
+    success:function(r){ if(r&&r.success){
+        m.primary_photo=r.metadata.primary_photo;
+        var it=(histList||[]).filter(function(f){return f.id===histDetail.id;})[0];
+        if(it) it.primary_photo=histResolvedPrimary(m);
+        histRenderPhotos(); renderHistList(histDetail.id);
+      } else { alert((r&&r.error)||"Could not set the primary photo."); } },
+    error:function(){ alert("Could not set the primary photo."); } });
 }
 function histPhotoRefresh(){   // redraw markers + timeline + grid after a photo change
   if(!histDetail) return;

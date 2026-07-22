@@ -131,7 +131,8 @@ def _live_recorder(fid):
 
 @app.route('/api/firings/<fid>', method='PATCH')
 def handle_update_firing(fid):
-    '''Edit a firing's user metadata (title, tags, rating, summary, defects).'''
+    '''Edit a firing's user metadata (title, tags, rating, summary, defects,
+    primary_photo).'''
     bottle.response.content_type = 'application/json'
     patch = bottle.request.json or {}
     live = _live_recorder(fid)

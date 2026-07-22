@@ -17,6 +17,10 @@
   .rpt-print button { border:none; background:#0a84ff; color:#fff; border-radius:10px; padding:9px 16px; font-weight:600; font-size:14px; cursor:pointer; }
   .rpt-section { margin:22px 0; }
   .rpt-section > h2 { font-size:13px; text-transform:uppercase; letter-spacing:.06em; color:#6b7280; margin:0 0 10px; font-weight:600; }
+  .rpt-notes-row { display:flex; gap:22px; align-items:flex-start; }
+  .rpt-notes-body { flex:1 1 0; min-width:0; }
+  .rpt-hero { flex:0 0 33%; }
+  .rpt-hero img { width:100%; border-radius:10px; border:1px solid #e6e9ef; display:block; }
   .rpt-notes .nr { margin-bottom:10px; }
   .rpt-notes label { display:block; font-weight:600; color:#6b7280; font-size:11px; text-transform:uppercase; letter-spacing:.06em; margin-bottom:2px; }
   .rpt-stars { color:#ff9500; font-size:18px; letter-spacing:2px; }
@@ -32,6 +36,10 @@
   .sched-table td { color:#11151c; font-variant-numeric:tabular-nums;
     font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace; }
   .sched-table td.sn, .sched-table th:first-child { color:#6b7280; font-weight:600; }
+  @media (max-width:560px) {
+    .rpt-notes-row { flex-direction:column; }
+    .rpt-hero { flex-basis:auto; max-width:60%; }
+  }
   @media print {
     body.hist-scope { padding:0; max-width:none; }
     .rpt-print { display:none; }
@@ -76,8 +84,18 @@
        '<table class="sched-table"><thead><tr><th>#</th><th>Rate</th><th>Target</th><th>Hold</th></tr></thead>'+
        '<tbody>'+rows+'</tbody></table></div>';
    }
+   function reportHero(d){
+     // the primary photo rides alongside the notes; null when there are none
+     var prim=histResolvedPrimary(d.metadata||{}); if(!prim) return "";
+     var id=encodeURIComponent(d.id);
+     return '<div class="rpt-hero"><img src="/api/firings/'+id+'/photos/'+encodeURIComponent(prim)+'"></div>';
+   }
    function reportPhotos(d){
-     var photos=(d.metadata&&d.metadata.photos)||[]; if(!photos.length) return "";
+     var photos=(d.metadata&&d.metadata.photos)||[];
+     // the primary photo already appears next to the notes; don't repeat it here
+     var prim=histResolvedPrimary(d.metadata||{});
+     photos=photos.filter(function(p){return p.file!==prim;});
+     if(!photos.length) return "";
      var id=encodeURIComponent(d.id);
      return '<div class="rpt-section"><h2>Photos</h2><div class="rpt-photos">'+
        photos.map(function(p){
@@ -116,7 +134,8 @@
        '<div class="rpt-head"><div><h1 class="rpt-title">'+histEsc(heading)+'</h1>'+
          '<div class="rpt-sub">'+sub.join(" · ")+'</div></div>'+
          '<div class="rpt-print"><button onclick="window.print()">Print</button></div></div>'+
-       '<div class="rpt-section rpt-notes"><h2>Notes</h2>'+reportNotes(m,o)+'</div>'+
+       '<div class="rpt-section rpt-notes"><h2>Notes</h2>'+
+         '<div class="rpt-notes-row"><div class="rpt-notes-body">'+reportNotes(m,o)+'</div>'+reportHero(d)+'</div></div>'+
        reportSchedule(d)+
        '<div class="stats tnum">'+histStatsHtml(s)+'</div>'+
        '<div class="rpt-section"><div class="hist-card"><div class="card-hd"><h3>Planned vs. actual</h3>'+

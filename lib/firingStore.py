@@ -110,6 +110,7 @@ def _empty_metadata():
             "went_wrong": "",
         },
         "photos": [],
+        "primary_photo": "",
         "notes": [],
     }
 
@@ -262,8 +263,11 @@ class FiringRecorder(object):
         if os.path.isfile(fpath):
             os.remove(fpath)
         with self._record_lock:
-            photos = self.record.get("metadata", {}).get("photos", [])
-            self.record["metadata"]["photos"] = [p for p in photos if p.get("file") != name]
+            meta = self.record.get("metadata", {})
+            photos = meta.get("photos", [])
+            meta["photos"] = [p for p in photos if p.get("file") != name]
+            if meta.get("primary_photo") == name:
+                meta["primary_photo"] = ""
             self._write_record()
         return True
 
@@ -503,6 +507,20 @@ def _downsample(rows, maxpts):
     return out
 
 
+def _resolved_primary(meta):
+    '''The photo to feature for a firing: the chosen primary if it still names an
+    existing photo, otherwise the first photo, or None if there are none.'''
+    photos = meta.get("photos") or []
+    if not photos:
+        return None
+    pref = meta.get("primary_photo")
+    if pref:
+        for p in photos:
+            if p.get("file") == pref:
+                return pref
+    return photos[0].get("file")
+
+
 def list_firings(firings_dir):
     '''Lightweight summaries for the history list, newest first. Excludes the
     per-firing time-series and the full profile curve (just its name) to keep
@@ -517,6 +535,7 @@ def list_firings(firings_dir):
             "summary": rec.get("summary", {}),
             "title": meta.get("title", ""),
             "tags": meta.get("tags", []),
+            "primary_photo": _resolved_primary(meta),
         })
     # newest firing first by when it actually ran, not when its bundle was
     # written (an imported firing's file is newer than its firing date)
@@ -579,6 +598,12 @@ def _merge_metadata(m, patch):
             m["title"] = _clean_str(patch["title"], 200)
         if isinstance(patch.get("tags"), list):
             m["tags"] = [_clean_str(t, 40) for t in patch["tags"] if str(t).strip()][:30]
+        if "primary_photo" in patch:
+            # only accept a filename that actually names one of this firing's
+            # photos; anything else (including "") clears the choice
+            pv = _clean_str(patch["primary_photo"], 200)
+            files = {p.get("file") for p in m.get("photos", [])}
+            m["primary_photo"] = pv if pv in files else ""
         if isinstance(patch.get("outcome"), dict):
             o = m.setdefault("outcome", {})
             po = patch["outcome"]
@@ -735,8 +760,11 @@ def delete_photo(firings_dir, fid, name):
         os.remove(fpath)
     rec = _read_record(dirpath)
     if rec is not None:
-        photos = rec.get("metadata", {}).get("photos", [])
-        rec["metadata"]["photos"] = [p for p in photos if p.get("file") != name]
+        meta = rec.get("metadata", {})
+        photos = meta.get("photos", [])
+        meta["photos"] = [p for p in photos if p.get("file") != name]
+        if meta.get("primary_photo") == name:
+            meta["primary_photo"] = ""
         _atomic_write_json(os.path.join(dirpath, RECORD), rec)
     return True
 
