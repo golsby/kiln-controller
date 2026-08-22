@@ -21,11 +21,11 @@ off, which also means an I2C transfer or a bit of clock stretching can never be
 mistaken for a button press.
 '''
 
+import ctypes
 import json
 import logging
 import mmap
 import os
-import struct
 import subprocess
 import sys
 import time
@@ -47,19 +47,30 @@ STATE_POLL = 2.0         # how often to ask the controller what it's doing
 
 class PinLevel(object):
     '''Reads the level of a GPIO without claiming it or touching its function
-    select, so it works on a pin that i2c1 (or anything else) already owns.'''
+    select, so it works on a pin that i2c1 (or anything else) already owns.
+
+    The register has to be read as a single aligned 32-bit load, which is what
+    the ctypes pointer buys us. Slicing the mmap (mem[0x34:0x38]) goes through
+    memcpy, and memcpy on a Device-mapped page returns garbage on ARM - on this
+    Pi it reported every 32-bit word in a 16-byte block as the same value, so
+    GPLEV0 came back as a copy of a neighbouring register. The mapping has to
+    be PROT_WRITE for ctypes.from_buffer to accept it; nothing here writes.'''
 
     def __init__(self, pin):
         self.pin = pin
         fd = os.open(GPIOMEM, os.O_RDWR | os.O_SYNC)
         try:
-            self.mem = mmap.mmap(fd, 4096, mmap.MAP_SHARED, mmap.PROT_READ)
+            self.mem = mmap.mmap(fd, 4096, mmap.MAP_SHARED,
+                                 mmap.PROT_READ | mmap.PROT_WRITE)
         finally:
             os.close(fd)
+        self.regs = ctypes.cast(
+            ctypes.addressof(ctypes.c_char.from_buffer(self.mem)),
+            ctypes.POINTER(ctypes.c_uint32))
+        self.index = GPLEV0 // 4
 
     def read(self):
-        levels = struct.unpack("<I", self.mem[GPLEV0:GPLEV0 + 4])[0]
-        return (levels >> self.pin) & 1
+        return (self.regs[self.index] >> self.pin) & 1
 
 
 class StatusLed(object):

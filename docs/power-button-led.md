@@ -78,6 +78,13 @@ GPIO3 is also I2C1 SCL, going to the Arduino over-temp watcher. Two consequences
   the pin's *level* out of the GPLEV0 register through `/dev/gpiomem` and never
   claims the pin or changes its function select, so I2C is untouched.
 
+  That register read has to be a single aligned 32-bit load (the daemon uses a
+  ctypes `uint32` pointer). Slicing the mmap goes through `memcpy`, and `memcpy`
+  against a Device-mapped page is not reliable on ARM: on this Pi it returned the
+  same value for every word in a 16-byte block, so GPLEV0 read back as a copy of a
+  neighbouring register and GPIO26 looked stuck high. `pinctrl get 3` is the
+  cross-check if this ever looks wrong again.
+
 ## Boot-status LED
 
 Driven by the kernel's `leds-gpio` driver rather than by application code, so the
