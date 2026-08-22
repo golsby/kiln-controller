@@ -62,6 +62,10 @@ node --check public/assets/js/picoreflow.js
   emergency shutoff, simulator params). Read it before changing behaviour.
 - **`public/`** — the web UI. `assets/js/picoreflow.js` holds all client logic; the 4 websockets
   there auto-reconnect and show a "Disconnected" banner (`#conn_banner`) when the link drops.
+- **`scripts/power_button.py`** — separate `kiln-power-button.service` daemon for the panel
+  power switch + its status LED. Reads GPIO3's level out of GPLEV0 via `/dev/gpiomem` (it must
+  *not* claim the pin — the Arduino watcher's I2C SCL is on it) and drives the LED through
+  `/sys/class/leds`. See [`docs/power-button-led.md`](docs/power-button-led.md).
 - Other entry points: `kiln-logger.py`, `kiln-tuner.py` (PID autotune), `watcher.py`,
   `process_log_to_csv.py`, `scripts/schedule_converter.py`.
 

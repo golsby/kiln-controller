@@ -77,6 +77,15 @@ oven.set_ovenwatcher(ovenWatcher)
 def index():
     return bottle.redirect('/kiln/index.html')
 
+@app.get('/api/state')
+def handle_api_state():
+    '''Current oven state as plain JSON - the same payload the /status
+    websocket pushes. Used by scripts/power_button.py, which drives the panel
+    status LED and needs to know whether a firing is running before it honours
+    a shutdown press.'''
+    bottle.response.content_type = 'application/json'
+    return json.dumps(oven.get_state())
+
 @app.get('/api/stats')
 def handle_api():
     log.debug("/api/stats command received")

@@ -49,6 +49,19 @@ gpio_heat = 11  # Switches zero-cross solid-state-relay
 gpio_contactor = 9
 gpio_arduino_reset = 10
 
+### Panel power button + status LED (see docs/power-button-led.md)
+# Momentary switch between GPIO3 (header pin 5) and GND. GPIO3 is shared with
+# the Arduino watcher's I2C SCL - pressing it while running just glitches an
+# I2C poll - but it is the only pin the Pi 3 firmware wakes on, so it is what
+# boots the Pi back up after a shutdown. scripts/power_button.py watches it by
+# reading the pin level register directly; it never claims the pin.
+gpio_power_button = 3
+power_button_hold_seconds = 3.0           # hold to power off when idle
+power_button_hold_seconds_firing = 10.0   # hold to power off during a firing
+# The switch's LED is driven by the kernel, not by this code:
+#   /boot/firmware/config.txt: dtoverlay=gpio-led,gpio=26,label=kiln,trigger=heartbeat
+status_led_name = "kiln"                  # /sys/class/leds/<name>
+
 ### Thermocouple Adapter selection:
 #   max31855 - bitbang SPI interface
 #   max31856 - bitbang SPI interface. must specify thermocouple_type.

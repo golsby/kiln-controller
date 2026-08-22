@@ -1,0 +1,12 @@
+[Unit]
+Description=kiln power button and status LED
+After=local-fs.target
+
+[Service]
+WorkingDirectory=/home/brian/kiln-controller
+ExecStart=/home/brian/kiln-controller/venv/bin/python /home/brian/kiln-controller/scripts/power_button.py
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
