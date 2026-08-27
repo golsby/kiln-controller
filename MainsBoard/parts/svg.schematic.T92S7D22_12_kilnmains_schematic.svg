@@ -1,0 +1,49 @@
+<?xml version='1.0' encoding='UTF-8' standalone='no'?>
+<svg xmlns:svg='http://www.w3.org/2000/svg' xmlns='http://www.w3.org/2000/svg' version='1.2' baseProfile='tiny' x='0in' y='0in' width='1.200000in' height='0.700000in' viewBox='0 0 30.4800 17.7800' >
+<g id='schematic'>
+<rect class='other' x='2.5400' y='1.2700' width='25.4000' height='15.2400' stroke='#000000' stroke-width='0.1524' fill='none'/>
+<text class='text' font-family="'Droid Sans'" stroke='none' stroke-width='0' fill='#000000' font-size='1.0142' x='15.2400' y='2.6700' text-anchor='middle'>K  T92 DPST-NO 30A</text>
+<line class='pin' id='connector0pin' connectorname='2a' x1='0.0000' y1='3.8100' x2='2.5400' y2='3.8100' stroke='#787878' stroke-width='0.246944' stroke-linecap='round'/>
+<rect class='terminal' id='connector0terminal' x='0.0000' y='3.8100' width='0.0001' height='0.0001' stroke='none' stroke-width='0' fill='none'/>
+<text class='text' font-family="'Droid Sans'" stroke='none' stroke-width='0' fill='#8c8c8c' font-size='0.881944' x='3.0400' y='4.1100' text-anchor='start'>2a</text>
+<line class='pin' id='connector1pin' connectorname='2b' x1='0.0000' y1='6.3500' x2='2.5400' y2='6.3500' stroke='#787878' stroke-width='0.246944' stroke-linecap='round'/>
+<rect class='terminal' id='connector1terminal' x='0.0000' y='6.3500' width='0.0001' height='0.0001' stroke='none' stroke-width='0' fill='none'/>
+<text class='text' font-family="'Droid Sans'" stroke='none' stroke-width='0' fill='#8c8c8c' font-size='0.881944' x='3.0400' y='6.6500' text-anchor='start'>2b  P1 COM  L1 IN</text>
+<line class='pin' id='connector4pin' connectorname='6a' x1='0.0000' y1='8.8900' x2='2.5400' y2='8.8900' stroke='#787878' stroke-width='0.246944' stroke-linecap='round'/>
+<rect class='terminal' id='connector4terminal' x='0.0000' y='8.8900' width='0.0001' height='0.0001' stroke='none' stroke-width='0' fill='none'/>
+<text class='text' font-family="'Droid Sans'" stroke='none' stroke-width='0' fill='#8c8c8c' font-size='0.881944' x='3.0400' y='9.1900' text-anchor='start'>6a</text>
+<line class='pin' id='connector5pin' connectorname='6b' x1='0.0000' y1='11.4300' x2='2.5400' y2='11.4300' stroke='#787878' stroke-width='0.246944' stroke-linecap='round'/>
+<rect class='terminal' id='connector5terminal' x='0.0000' y='11.4300' width='0.0001' height='0.0001' stroke='none' stroke-width='0' fill='none'/>
+<text class='text' font-family="'Droid Sans'" stroke='none' stroke-width='0' fill='#8c8c8c' font-size='0.881944' x='3.0400' y='11.7300' text-anchor='start'>6b  P2 COM  L2 IN</text>
+<line class='pin' id='connector8pin' connectorname='A1a' x1='0.0000' y1='13.9700' x2='2.5400' y2='13.9700' stroke='#787878' stroke-width='0.246944' stroke-linecap='round'/>
+<rect class='terminal' id='connector8terminal' x='0.0000' y='13.9700' width='0.0001' height='0.0001' stroke='none' stroke-width='0' fill='none'/>
+<text class='text' font-family="'Droid Sans'" stroke='none' stroke-width='0' fill='#8c8c8c' font-size='0.881944' x='3.0400' y='14.2700' text-anchor='start'>A1a</text>
+<line class='pin' id='connector9pin' connectorname='A1b' x1='0.0000' y1='16.5100' x2='2.5400' y2='16.5100' stroke='#787878' stroke-width='0.246944' stroke-linecap='round'/>
+<rect class='terminal' id='connector9terminal' x='0.0000' y='16.5100' width='0.0001' height='0.0001' stroke='none' stroke-width='0' fill='none'/>
+<text class='text' font-family="'Droid Sans'" stroke='none' stroke-width='0' fill='#8c8c8c' font-size='0.881944' x='3.0400' y='16.8100' text-anchor='start'>A1b  COIL +12V</text>
+<line class='pin' id='connector2pin' connectorname='4a' x1='30.4800' y1='3.8100' x2='27.9400' y2='3.8100' stroke='#787878' stroke-width='0.246944' stroke-linecap='round'/>
+<rect class='terminal' id='connector2terminal' x='30.4800' y='3.8100' width='0.0001' height='0.0001' stroke='none' stroke-width='0' fill='none'/>
+<text class='text' font-family="'Droid Sans'" stroke='none' stroke-width='0' fill='#8c8c8c' font-size='0.881944' x='27.4400' y='4.1100' text-anchor='end'>4a</text>
+<line class='pin' id='connector3pin' connectorname='4b' x1='30.4800' y1='6.3500' x2='27.9400' y2='6.3500' stroke='#787878' stroke-width='0.246944' stroke-linecap='round'/>
+<rect class='terminal' id='connector3terminal' x='30.4800' y='6.3500' width='0.0001' height='0.0001' stroke='none' stroke-width='0' fill='none'/>
+<text class='text' font-family="'Droid Sans'" stroke='none' stroke-width='0' fill='#8c8c8c' font-size='0.881944' x='27.4400' y='6.6500' text-anchor='end'>P1 NO  L1 SW  4b</text>
+<line class='pin' id='connector6pin' connectorname='8a' x1='30.4800' y1='8.8900' x2='27.9400' y2='8.8900' stroke='#787878' stroke-width='0.246944' stroke-linecap='round'/>
+<rect class='terminal' id='connector6terminal' x='30.4800' y='8.8900' width='0.0001' height='0.0001' stroke='none' stroke-width='0' fill='none'/>
+<text class='text' font-family="'Droid Sans'" stroke='none' stroke-width='0' fill='#8c8c8c' font-size='0.881944' x='27.4400' y='9.1900' text-anchor='end'>8a</text>
+<line class='pin' id='connector7pin' connectorname='8b' x1='30.4800' y1='11.4300' x2='27.9400' y2='11.4300' stroke='#787878' stroke-width='0.246944' stroke-linecap='round'/>
+<rect class='terminal' id='connector7terminal' x='30.4800' y='11.4300' width='0.0001' height='0.0001' stroke='none' stroke-width='0' fill='none'/>
+<text class='text' font-family="'Droid Sans'" stroke='none' stroke-width='0' fill='#8c8c8c' font-size='0.881944' x='27.4400' y='11.7300' text-anchor='end'>P2 NO  L2 OUT  8b</text>
+<line class='pin' id='connector10pin' connectorname='A2a' x1='30.4800' y1='13.9700' x2='27.9400' y2='13.9700' stroke='#787878' stroke-width='0.246944' stroke-linecap='round'/>
+<rect class='terminal' id='connector10terminal' x='30.4800' y='13.9700' width='0.0001' height='0.0001' stroke='none' stroke-width='0' fill='none'/>
+<text class='text' font-family="'Droid Sans'" stroke='none' stroke-width='0' fill='#8c8c8c' font-size='0.881944' x='27.4400' y='14.2700' text-anchor='end'>A2a</text>
+<line class='pin' id='connector11pin' connectorname='A2b' x1='30.4800' y1='16.5100' x2='27.9400' y2='16.5100' stroke='#787878' stroke-width='0.246944' stroke-linecap='round'/>
+<rect class='terminal' id='connector11terminal' x='30.4800' y='16.5100' width='0.0001' height='0.0001' stroke='none' stroke-width='0' fill='none'/>
+<text class='text' font-family="'Droid Sans'" stroke='none' stroke-width='0' fill='#8c8c8c' font-size='0.881944' x='27.4400' y='16.8100' text-anchor='end'>COIL DRIVE  A2b</text>
+<line class='other' x1='2.5400' y1='3.8100' x2='2.5400' y2='6.3500' stroke='#000000' stroke-width='0.4572' stroke-linecap='round'/>
+<line class='other' x1='27.9400' y1='3.8100' x2='27.9400' y2='6.3500' stroke='#000000' stroke-width='0.4572' stroke-linecap='round'/>
+<line class='other' x1='2.5400' y1='8.8900' x2='2.5400' y2='11.4300' stroke='#000000' stroke-width='0.4572' stroke-linecap='round'/>
+<line class='other' x1='27.9400' y1='8.8900' x2='27.9400' y2='11.4300' stroke='#000000' stroke-width='0.4572' stroke-linecap='round'/>
+<line class='other' x1='2.5400' y1='13.9700' x2='2.5400' y2='16.5100' stroke='#000000' stroke-width='0.4572' stroke-linecap='round'/>
+<line class='other' x1='27.9400' y1='13.9700' x2='27.9400' y2='16.5100' stroke='#000000' stroke-width='0.4572' stroke-linecap='round'/>
+</g>
+</svg>

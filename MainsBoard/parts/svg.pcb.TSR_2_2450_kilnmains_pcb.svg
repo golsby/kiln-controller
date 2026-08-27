@@ -1,0 +1,17 @@
+<?xml version='1.0' encoding='UTF-8' standalone='no'?>
+<svg xmlns:svg='http://www.w3.org/2000/svg' xmlns='http://www.w3.org/2000/svg' version='1.2' baseProfile='tiny' x='0in' y='0in' width='0.551181in' height='0.295276in' viewBox='0 0 14.0000 7.5000' >
+<g id='copper1'>
+<circle id='connector0pad' connectorname='+Vin' cx='4.4200' cy='3.8900' r='0.8000' stroke='#F7BD13' stroke-width='0.6000' fill='none' />
+<circle id='connector1pad' connectorname='GND' cx='6.9600' cy='3.8900' r='0.8000' stroke='#F7BD13' stroke-width='0.6000' fill='none' />
+<circle id='connector2pad' connectorname='+Vout' cx='9.5000' cy='3.8900' r='0.8000' stroke='#F7BD13' stroke-width='0.6000' fill='none' />
+<g id='copper0'>
+<circle id='connector0pad' connectorname='+Vin' cx='4.4200' cy='3.8900' r='0.8000' stroke='#F7BD13' stroke-width='0.6000' fill='none' />
+<circle id='connector1pad' connectorname='GND' cx='6.9600' cy='3.8900' r='0.8000' stroke='#F7BD13' stroke-width='0.6000' fill='none' />
+<circle id='connector2pad' connectorname='+Vout' cx='9.5000' cy='3.8900' r='0.8000' stroke='#F7BD13' stroke-width='0.6000' fill='none' />
+</g>
+</g>
+<g id='silkscreen'>
+<rect class='other' x='0.1500' y='0.1500' width='13.7000' height='7.2000' stroke='#f0f0f0' stroke-width='0.2032' fill='none' />
+<text class='other' font-family="'Droid Sans'" fill='#f0f0f0' font-size='1.8' x='7.000' y='2.2' text-anchor='middle'>TSR2</text>
+</g>
+</svg>

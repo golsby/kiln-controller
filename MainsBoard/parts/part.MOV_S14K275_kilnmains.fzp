@@ -1,0 +1,40 @@
+<?xml version='1.0' encoding='UTF-8' standalone='no'?>
+<module fritzingVersion="1.0.7" moduleId="MOV_S14K275_kilnmains">
+  <version>1</version>
+  <author>generated for kiln-controller mains board</author>
+  <title>Metal oxide varistor 275VAC (14mm disc)</title>
+  <label>MOV</label>
+  <date>2026-08-26</date>
+  <tags><tag>kiln</tag></tags>
+  <properties>
+    <property name="family">kiln mains</property>
+    <property name="package">THT radial</property>
+    <property name="part number">S14K275</property>
+    <property name="voltage">275VAC</property>
+  </properties>
+  <description>275 VAC-rated metal oxide varistor across the PSU input, 14 mm disc on 7.5 mm lead pitch (TDK S14K275, Littelfuse V275LA20AP or equivalent). Fit it downstream of F1 so a failed MOV blows the fuse rather than the branch circuit breaker.</description>
+  <views>
+    <iconView><layers image='icon/MOV_S14K275_kilnmains_icon.svg'><layer layerId='icon'/></layers></iconView>
+    <breadboardView><layers image='breadboard/MOV_S14K275_kilnmains_breadboard.svg'><layer layerId='breadboard'/></layers></breadboardView>
+    <schematicView><layers image='schematic/MOV_S14K275_kilnmains_schematic.svg'><layer layerId='schematic'/></layers></schematicView>
+    <pcbView><layers image='pcb/MOV_S14K275_kilnmains_pcb.svg'><layer layerId='copper0'/><layer layerId='copper1'/><layer layerId='silkscreen'/></layers></pcbView>
+  </views>
+  <connectors>
+    <connector id="connector0" name="1" type="male">
+      <description>lead 1</description>
+      <views>
+        <breadboardView><p layer="breadboard" svgId="connector0pin"/></breadboardView>
+        <schematicView><p layer="schematic" svgId="connector0pin" terminalId="connector0terminal"/></schematicView>
+        <pcbView><p layer="copper0" svgId="connector0pad"/><p layer="copper1" svgId="connector0pad"/></pcbView>
+      </views>
+    </connector>
+    <connector id="connector1" name="2" type="male">
+      <description>lead 2</description>
+      <views>
+        <breadboardView><p layer="breadboard" svgId="connector1pin"/></breadboardView>
+        <schematicView><p layer="schematic" svgId="connector1pin" terminalId="connector1terminal"/></schematicView>
+        <pcbView><p layer="copper0" svgId="connector1pad"/><p layer="copper1" svgId="connector1pad"/></pcbView>
+      </views>
+    </connector>
+  </connectors>
+</module>

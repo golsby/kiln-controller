@@ -1,0 +1,10 @@
+<?xml version='1.0' encoding='UTF-8' standalone='no'?>
+<svg xmlns:svg='http://www.w3.org/2000/svg' xmlns='http://www.w3.org/2000/svg' version='1.2' baseProfile='tiny' x='0in' y='0in' width='1.200000in' height='0.300000in' viewBox='0 0 30.4800 7.6200' >
+<g id='icon'>
+<rect x='2.5400' y='1.2700' width='25.4000' height='5.0800' rx='0.6' fill='#2d3436' stroke='none'/>
+<text font-family="'Droid Sans'" fill='#ffffff' font-size='2' x='15.2400' y='4.5100' text-anchor='middle'>TSR2</text>
+<line id='connector0pin' connectorname='+Vin' x1='0' y1='3.8100' x2='2.5400' y2='3.8100' stroke='#8c8c8c' stroke-width='0.6' stroke-linecap='round'/>
+<line id='connector1pin' connectorname='GND' x1='0' y1='6.3500' x2='2.5400' y2='6.3500' stroke='#8c8c8c' stroke-width='0.6' stroke-linecap='round'/>
+<line id='connector2pin' connectorname='+Vout' x1='30.4800' y1='3.8100' x2='27.9400' y2='3.8100' stroke='#8c8c8c' stroke-width='0.6' stroke-linecap='round'/>
+</g>
+</svg>

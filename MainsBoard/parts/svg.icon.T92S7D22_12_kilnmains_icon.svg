@@ -1,0 +1,19 @@
+<?xml version='1.0' encoding='UTF-8' standalone='no'?>
+<svg xmlns:svg='http://www.w3.org/2000/svg' xmlns='http://www.w3.org/2000/svg' version='1.2' baseProfile='tiny' x='0in' y='0in' width='1.200000in' height='0.700000in' viewBox='0 0 30.4800 17.7800' >
+<g id='icon'>
+<rect x='2.5400' y='1.2700' width='25.4000' height='15.2400' rx='0.6' fill='#2d3436' stroke='none'/>
+<text font-family="'Droid Sans'" fill='#ffffff' font-size='2' x='15.2400' y='9.5900' text-anchor='middle'>T92</text>
+<line id='connector0pin' connectorname='2a' x1='0' y1='3.8100' x2='2.5400' y2='3.8100' stroke='#8c8c8c' stroke-width='0.6' stroke-linecap='round'/>
+<line id='connector1pin' connectorname='2b' x1='0' y1='6.3500' x2='2.5400' y2='6.3500' stroke='#8c8c8c' stroke-width='0.6' stroke-linecap='round'/>
+<line id='connector4pin' connectorname='6a' x1='0' y1='8.8900' x2='2.5400' y2='8.8900' stroke='#8c8c8c' stroke-width='0.6' stroke-linecap='round'/>
+<line id='connector5pin' connectorname='6b' x1='0' y1='11.4300' x2='2.5400' y2='11.4300' stroke='#8c8c8c' stroke-width='0.6' stroke-linecap='round'/>
+<line id='connector8pin' connectorname='A1a' x1='0' y1='13.9700' x2='2.5400' y2='13.9700' stroke='#8c8c8c' stroke-width='0.6' stroke-linecap='round'/>
+<line id='connector9pin' connectorname='A1b' x1='0' y1='16.5100' x2='2.5400' y2='16.5100' stroke='#8c8c8c' stroke-width='0.6' stroke-linecap='round'/>
+<line id='connector2pin' connectorname='4a' x1='30.4800' y1='3.8100' x2='27.9400' y2='3.8100' stroke='#8c8c8c' stroke-width='0.6' stroke-linecap='round'/>
+<line id='connector3pin' connectorname='4b' x1='30.4800' y1='6.3500' x2='27.9400' y2='6.3500' stroke='#8c8c8c' stroke-width='0.6' stroke-linecap='round'/>
+<line id='connector6pin' connectorname='8a' x1='30.4800' y1='8.8900' x2='27.9400' y2='8.8900' stroke='#8c8c8c' stroke-width='0.6' stroke-linecap='round'/>
+<line id='connector7pin' connectorname='8b' x1='30.4800' y1='11.4300' x2='27.9400' y2='11.4300' stroke='#8c8c8c' stroke-width='0.6' stroke-linecap='round'/>
+<line id='connector10pin' connectorname='A2a' x1='30.4800' y1='13.9700' x2='27.9400' y2='13.9700' stroke='#8c8c8c' stroke-width='0.6' stroke-linecap='round'/>
+<line id='connector11pin' connectorname='A2b' x1='30.4800' y1='16.5100' x2='27.9400' y2='16.5100' stroke='#8c8c8c' stroke-width='0.6' stroke-linecap='round'/>
+</g>
+</svg>

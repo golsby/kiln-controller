@@ -1,0 +1,50 @@
+<?xml version='1.0' encoding='UTF-8' standalone='no'?>
+<module fritzingVersion="1.0.7" moduleId="TSR_2_2450_kilnmains">
+  <version>1</version>
+  <author>generated for kiln-controller mains board</author>
+  <title>Traco TSR 2-2450 (5V 2A switching regulator, SIP3)</title>
+  <label>VR</label>
+  <date>2026-08-26</date>
+  <tags><tag>kiln</tag></tags>
+  <properties>
+    <property name="family">kiln mains</property>
+    <property name="package">THT</property>
+    <property name="part number">TSR 2-2450</property>
+    <property name="mn">Traco Power</property>
+    <property name="voltage">5V</property>
+    <property name="current">2A</property>
+  </properties>
+  <description>Traco TSR 2-2450 non-isolated buck regulator, 7805 pinout, 5 V 2 A, no heatsink needed. Footprint from the TSR 2 series outline drawing.</description>
+  <views>
+    <iconView><layers image='icon/TSR_2_2450_kilnmains_icon.svg'><layer layerId='icon'/></layers></iconView>
+    <breadboardView><layers image='breadboard/TSR_2_2450_kilnmains_breadboard.svg'><layer layerId='breadboard'/></layers></breadboardView>
+    <schematicView><layers image='schematic/TSR_2_2450_kilnmains_schematic.svg'><layer layerId='schematic'/></layers></schematicView>
+    <pcbView><layers image='pcb/TSR_2_2450_kilnmains_pcb.svg'><layer layerId='copper0'/><layer layerId='copper1'/><layer layerId='silkscreen'/></layers></pcbView>
+  </views>
+  <connectors>
+    <connector id="connector0" name="+Vin" type="male">
+      <description>input, +6.5 to +42 V</description>
+      <views>
+        <breadboardView><p layer="breadboard" svgId="connector0pin"/></breadboardView>
+        <schematicView><p layer="schematic" svgId="connector0pin" terminalId="connector0terminal"/></schematicView>
+        <pcbView><p layer="copper0" svgId="connector0pad"/><p layer="copper1" svgId="connector0pad"/></pcbView>
+      </views>
+    </connector>
+    <connector id="connector1" name="GND" type="male">
+      <description>ground</description>
+      <views>
+        <breadboardView><p layer="breadboard" svgId="connector1pin"/></breadboardView>
+        <schematicView><p layer="schematic" svgId="connector1pin" terminalId="connector1terminal"/></schematicView>
+        <pcbView><p layer="copper0" svgId="connector1pad"/><p layer="copper1" svgId="connector1pad"/></pcbView>
+      </views>
+    </connector>
+    <connector id="connector2" name="+Vout" type="male">
+      <description>+5 V output, 2 A</description>
+      <views>
+        <breadboardView><p layer="breadboard" svgId="connector2pin"/></breadboardView>
+        <schematicView><p layer="schematic" svgId="connector2pin" terminalId="connector2terminal"/></schematicView>
+        <pcbView><p layer="copper0" svgId="connector2pad"/><p layer="copper1" svgId="connector2pad"/></pcbView>
+      </views>
+    </connector>
+  </connectors>
+</module>
