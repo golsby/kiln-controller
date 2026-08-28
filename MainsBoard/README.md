@@ -50,24 +50,22 @@ pull in:
 ```
 
 - **Q1** is the low-side element, gated by the Pi's `gpio_contactor` (`CTX`).
-- **RLY1** is the high-side element. Its own coil is driven by Q2 from the Arduino
-  watcher's `ENABLE_PIN`, so the two agents are galvanically separate and neither
-  can energize the contactor alone.
-- **J5** is a normally-closed bimetallic thermal switch (70 °C) bolted to the SSR
-  heatsink. If the SSR overheats, the contactor drops both legs with no firmware
-  in the loop. SSRs fail *shorted*, so this is the layer that catches the failure
-  the contactor exists for.
+- **Q2** is the high-side elemnt, gated from the Arduino watcher's `ENABLE_PIN`, so the two agents are galvanically separate and neither can energize the contactor alone.
 
-R2/R4/R6 are gate pulldowns: a booting, crashed or unpowered Pi leaves every
-driver open. D1 and D2 are coil flybacks.
+**R2**/**R4**/**R6** are gate pulldowns: a booting, crashed or unpowered Pi leaves every
+driver open. **D1** is coil flybacks.
 
-**Supplies.** PS1 takes L1-L2 (universal input, non-polarised, so no neutral is
-fine) through F1 and gives 12 V; VR1 bucks that to 5 V for the Pi. MOV1 sits
-downstream of F1 so a failed MOV blows the fuse, not the branch breaker.
+#### Supplies 
 
-**Indicators.** LED2 sits directly across the K1 coil, so it means *contactor
-actually energized*, not *someone asked for it*. LED1 follows Q3 (SSR driven),
-LED3 is the 5 V rail.
+**PS1** takes **L1-L2** (universal input, non-polarised, so no neutral is
+fine) through **F1** and gives 12V; 
+
+**VR1** bucks that to 5V for the Pi. **MOV1** sits downstream of **F1** so a failed **MOV** blows the fuse, not the branch breaker.
+
+#### Indicators 
+
+**LED1** is the 5V rail.
+**LED2** sits directly across the **K1** coil, so it means *contactor actually energized*, not *someone asked for it*. 
 
 ## Netlist
 
@@ -129,8 +127,8 @@ fetch-checked, because those sites block scripted requests.
 ### On-board
 
 | Ref | Qty | Part | Spec | Datasheet |
-|---|---|---|---|---|
-| K1 | 1 | TE / P&B **T92S7D22-12** | DPST-NO, 30 A @ 277 VAC, 12 VDC coil, PCB terminals | [DS](https://www.farnell.com/datasheets/2606696.pdf) · [page](https://www.newark.com/te-connectivity-potter-brumfield/t92p7d22-12/relay-dpst-no-277vac-28vdc-30a/dp/17M3087) |
+|---|---|---|:-:|---|
+| K1 | 1 | TE / P&B **T92S7D22-12**<br />*T92P7D22-12* | DPST-NO, 30 A @ 277 VAC, 12 VDC coil, PCB terminals<br />*Panel mount + quick connect* | [DS](https://www.farnell.com/datasheets/2606696.pdf) · [page](https://www.newark.com/te-connectivity-potter-brumfield/t92p7d22-12/relay-dpst-no-277vac-28vdc-30a/dp/17M3087) |
 | PS1 | 1 | Mean Well **IRM-20-12** | 85-264 VAC in, 12 V 1.8 A out, encapsulated, convection cooled | [DS](https://www.meanwell.com/Upload/PDF/IRM-20/IRM-20-SPEC.PDF) |
 | VR1 | 1 | Traco **TSR 2-2450** | 5 V 2 A buck, SIP3, 7805 pinout, no heatsink | [DS](https://www.tracopower.com/sites/default/files/products/datasheets/tsr2_datasheet.pdf) |
 | RLY1 | 1 | Omron **G6K-2F-Y DC12** or similar | 12 V coil signal relay; high-side element of the coil interlock | [DS](https://omronfs.omron.com/en_US/ecb/products/pdf/en-g6k.pdf) |
@@ -146,8 +144,8 @@ fetch-checked, because those sites block scripted requests.
 | R1, R3, R5 | 3 | 100 Ω 1/4 W | gate series | — |
 | R2, R4, R6 | 3 | 10 kΩ 1/4 W | gate pulldown — fail-safe off | — |
 | R7, R8, R9 | 3 | 1 kΩ 1/4 W | LED series | — |
-| LED1 | 1 | Red 5 mm | HEAT (SSR driven) | — |
-| LED2, LED3 | 2 | Green 5 mm | CTX (coil energized), 5 V rail | — |
+| LED1 | 1 | Red 5 mm | Power | — |
+| LED2 | 2 | Green 5 mm | CTX (coil energized) | — |
 | J1, J2, J3 | 3 | **Phoenix Contact PC 5** 2-pos, 7.62 mm | 41 A / 10 mm². Do not substitute a 5 mm block — those stop around 16 A | [page](https://www.phoenixcontact.com/en-us/products/pcb-terminal-blocks-and-pcb-connectors/pcb-terminal-blocks) |
 | J4-J7 | 6 | 2-pos, 5.08 mm terminal block | SELV side, any make | — |
 
@@ -161,8 +159,6 @@ crashed, or unpowered. Don't drop them.
 | **SSR** | Sensata/Crydom **CWD2450** — 50 A, 24-280 VAC, zero-cross, 3-32 VDC input, screw terminals. 50 A on a 21 A load is deliberate margin; the Fotek clones are not honestly rated. | [page](https://www.sensata.com/products/relays/cw-series-240-vac-panel-mount-solid-state-relay-cwd2450) |
 | **SSR heatsink** | Finned, or bolt the SSR to the enclosure wall. At 21 A you are dissipating roughly 25 W. | — |
 | **Thermal switch** | Honeywell **2455R-100-74** — SPST-NC, opens at 70 °C, resets at 55 °C. Bolt to the SSR heatsink, wire to J5. | [DS](https://prod-edam.honeywell.com/content/dam/honeywell-edam/sps/siot/en-ca/products/sensors/temperature-sensors/thermostats/documents/sps-siot-commercial-thermostats-ps-009053-2-en-ciid-49660.pdf) · [page](https://www.newark.com/honeywell/2455r-100-74/thermal-switch/dp/98K8367) |
-| **Kiln fan** | 240 VAC axial across L1-L2 — Sunon `DP201A2123HST.GN` (120 mm) or ebm-papst `4656N` (119 mm). 230 V ±10 % covers 240 V, and no neutral is needed. | [page](https://www.tme.eu/en/details/dp201a2123hst/ac230v-fans/sunon/dp201a2123hst-gn/) |
-| **Enclosure fan** | Optional 12 V DC on J7, ~0.2 A | — |
 
 ### Two things to confirm before ordering
 
