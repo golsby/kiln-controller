@@ -1,19 +1,13 @@
 <?xml version='1.0' encoding='UTF-8' standalone='no'?>
 <svg xmlns:svg='http://www.w3.org/2000/svg' xmlns='http://www.w3.org/2000/svg' version='1.2' baseProfile='tiny' x='0in' y='0in' width='2.062992in' height='1.070866in' viewBox='0 0 52.4000 27.2000' >
-<g id='copper1'>
-<circle id='connector0pad' connectorname='AC/L' cx='49.0000' cy='24.0000' r='0.9750' stroke='#F7BD13' stroke-width='0.6500' fill='none' />
-<circle id='connector1pad' connectorname='AC/N' cx='49.0000' cy='3.2000' r='0.9750' stroke='#F7BD13' stroke-width='0.6500' fill='none' />
-<circle id='connector2pad' connectorname='+V' cx='4.0000' cy='11.2000' r='0.9750' stroke='#F7BD13' stroke-width='0.6500' fill='none' />
-<circle id='connector3pad' connectorname='-V' cx='4.0000' cy='3.2000' r='0.9750' stroke='#F7BD13' stroke-width='0.6500' fill='none' />
-<g id='copper0'>
-<circle id='connector0pad' connectorname='AC/L' cx='49.0000' cy='24.0000' r='0.9750' stroke='#F7BD13' stroke-width='0.6500' fill='none' />
-<circle id='connector1pad' connectorname='AC/N' cx='49.0000' cy='3.2000' r='0.9750' stroke='#F7BD13' stroke-width='0.6500' fill='none' />
-<circle id='connector2pad' connectorname='+V' cx='4.0000' cy='11.2000' r='0.9750' stroke='#F7BD13' stroke-width='0.6500' fill='none' />
-<circle id='connector3pad' connectorname='-V' cx='4.0000' cy='3.2000' r='0.9750' stroke='#F7BD13' stroke-width='0.6500' fill='none' />
-</g>
-</g>
 <g id='silkscreen'>
 <rect class='other' x='0.1500' y='0.1500' width='52.1000' height='26.9000' stroke='#f0f0f0' stroke-width='0.2032' fill='none' />
 <text class='other' font-family="'Droid Sans'" fill='#f0f0f0' font-size='2.6' x='26.200' y='14.600' text-anchor='middle'>IRM-20-12</text>
 </g>
+<g id='copper1'><g id='copper0'>
+<circle id='connector0pad' connectorname='AC/L' cx='49.0000' cy='24.0000' r='0.9750' stroke='#F7BD13' stroke-width='0.6500' fill='none' />
+<circle id='connector1pad' connectorname='AC/N' cx='49.0000' cy='3.2000' r='0.9750' stroke='#F7BD13' stroke-width='0.6500' fill='none' />
+<circle id='connector2pad' connectorname='+V' cx='4.0000' cy='11.2000' r='0.9750' stroke='#F7BD13' stroke-width='0.6500' fill='none' />
+<circle id='connector3pad' connectorname='-V' cx='4.0000' cy='3.2000' r='0.9750' stroke='#F7BD13' stroke-width='0.6500' fill='none' />
+</g></g>
 </svg>

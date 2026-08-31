@@ -1,15 +1,11 @@
 <?xml version='1.0' encoding='UTF-8' standalone='no'?>
 <svg xmlns:svg='http://www.w3.org/2000/svg' xmlns='http://www.w3.org/2000/svg' version='1.2' baseProfile='tiny' x='0in' y='0in' width='0.629921in' height='0.236220in' viewBox='0 0 16.0000 6.0000' >
-<g id='copper1'>
-<circle id='connector0pad' connectorname='1' cx='4.2500' cy='3.0000' r='0.9250' stroke='#F7BD13' stroke-width='0.7500' fill='none' />
-<circle id='connector1pad' connectorname='2' cx='11.7500' cy='3.0000' r='0.9250' stroke='#F7BD13' stroke-width='0.7500' fill='none' />
-<g id='copper0'>
-<circle id='connector0pad' connectorname='1' cx='4.2500' cy='3.0000' r='0.9250' stroke='#F7BD13' stroke-width='0.7500' fill='none' />
-<circle id='connector1pad' connectorname='2' cx='11.7500' cy='3.0000' r='0.9250' stroke='#F7BD13' stroke-width='0.7500' fill='none' />
-</g>
-</g>
 <g id='silkscreen'>
 <rect class='other' x='0.1500' y='0.1500' width='15.7000' height='5.7000' stroke='#f0f0f0' stroke-width='0.2032' fill='none' />
 <text class='other' font-family="'Droid Sans'" fill='#f0f0f0' font-size='2.2' x='8.000' y='2.6' text-anchor='middle'>MOV</text>
 </g>
+<g id='copper1'><g id='copper0'>
+<circle id='connector0pad' connectorname='1' cx='4.2500' cy='3.0000' r='0.9250' stroke='#F7BD13' stroke-width='0.7500' fill='none' />
+<circle id='connector1pad' connectorname='2' cx='11.7500' cy='3.0000' r='0.9250' stroke='#F7BD13' stroke-width='0.7500' fill='none' />
+</g></g>
 </svg>

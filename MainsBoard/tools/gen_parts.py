@@ -46,13 +46,37 @@ def silk_rect(x, y, w, h, sw=0.2032):
             f"height='{h:.4f}' stroke='#f0f0f0' stroke-width='{sw}' fill='none' />\n")
 
 
-def make_pcb_svg(w, h, pads, silk):
-    """pads: list of (idx, name, cx, cy, drill, od).  silk: raw svg string."""
-    body = "".join(pcb_pad(*p) for p in pads)
+def pcb_nonconn(idx, cx, cy, dia):
+    """A FILLED copper circle with a `nonconn` id: a non-plated through hole.
+
+    Verified against Fritzing 1.0.7's own exporter (`Fritzing -gerber`):
+      * FILLED circle + id `nonconn<N>` -> drill file under the NON-PLATED tool
+        (T1..), and the feature is absent from the copper gerbers entirely.
+      * RING (fill:none + stroke)       -> drill file under a PLATED tool
+        (T100..), with the stroke flashed as an annular ring in copper.
+    A mounting hole that must carry no copper and join no net is the filled
+    form. Fritzing's own panel-mount parts (Taiway toggle switch mounting hole,
+    Dagu servo mounting holes) use exactly this.
+    """
+    return (f"<circle id='nonconn{idx}' cx='{cx:.4f}' cy='{cy:.4f}' "
+            f"r='{dia / 2.0:.4f}' fill='#000000' stroke='none' />\n")
+
+
+def make_pcb_svg(w, h, pads, silk, copper_extra=""):
+    """pads: list of (idx, name, cx, cy, drill, od).  silk: raw svg string.
+    copper_extra: raw svg dropped inside the copper group (e.g. nonconn holes).
+
+    Pads are defined ONCE inside nested copper1/copper0 groups, which is the
+    convention every core Fritzing THT footprint uses. Emitting them twice
+    (once per group) duplicates the element ids, and Fritzing then resolves
+    connector<N>pad only on copper1 - the copper0 lookup fails and the pad is
+    silently dropped from the bottom-copper gerber.
+    """
+    body = "".join(pcb_pad(*p) for p in pads) + copper_extra
     s = svg_open(w, h)
-    s += "<g id='copper1'>\n" + body
-    s += "<g id='copper0'>\n" + body + "</g>\n</g>\n"
-    s += "<g id='silkscreen'>\n" + silk + "</g>\n</svg>\n"
+    s += "<g id='silkscreen'>\n" + silk + "</g>\n"
+    s += "<g id='copper1'><g id='copper0'>\n" + body + "</g></g>\n"
+    s += "</svg>\n"
     return s
 
 
@@ -165,12 +189,19 @@ def fzp(module_id, title, label, desc, family, conns, props=None):
          "  <connectors>"]
     for c in conns:
         i = c["idx"]
+        # hybrid="yes" means "this connector is not really in this
+        # view": Fritzing draws no pad, adds nothing to the ratsnest
+        # and exports no copper or drill for it.  layer="copper0"/
+        # "copper1" is the spelling that loads silently - both
+        # layer="unknown" and an empty <pcbView/> log "svgidlayer
+        # fail" (checked against Fritzing 1.0.7).
+        hyb = ' hybrid="yes"' if c.get("hybrid") else ""
         s += [f'    <connector id="connector{i}" name="{c["name"]}" type="male">',
               f'      <description>{c["desc"]}</description>',
               "      <views>",
               f'        <breadboardView><p layer="breadboard" svgId="connector{i}pin"/></breadboardView>',
               f'        <schematicView><p layer="schematic" svgId="connector{i}pin" terminalId="connector{i}terminal"/></schematicView>',
-              f'        <pcbView><p layer="copper0" svgId="connector{i}pad"/><p layer="copper1" svgId="connector{i}pad"/></pcbView>',
+              f'        <pcbView><p layer="copper0" svgId="connector{i}pad"{hyb}/><p layer="copper1" svgId="connector{i}pad"{hyb}/></pcbView>',
               "      </views>",
               "    </connector>"]
     s += ["  </connectors>", "</module>", ""]
@@ -421,3 +452,167 @@ if __name__ == "__main__":
                  {"package": "THT radial", "part number": "S14K275",
                   "voltage": "275VAC"})
     print("wrote MOV")
+
+
+# ================== 6. T92 PANEL-MOUNT RELAY (QC tabs, hybrid PCB model) ====
+# T92P7D22-12 decodes as: P dust-protected case / 7 two form A / D DC coil /
+# 2 panel mount via flanged cover with .250in (6.35 x 0.81) QC terminals /
+# 2 AgCdO contacts / -12 twelve volt coil.  Datasheet 1308242 rev 1217,
+# "Dimensions - T92 Mounting and termination code 2, 3 and 4" (page 2).
+#
+# HYBRID PART.  The six relay terminals are real connectors in breadboard and
+# schematic, so the coil driver and the mains nets have something to land on and
+# the sheet documents the actual circuit.  In pcbView every one of them is
+# hybrid="yes": no pad, no ratsnest, no copper, nothing to route.  The board
+# gets only the two mounting holes, and those are not connectors at all - they
+# are `nonconn` filled circles, which Fritzing exports as NON-PLATED holes.
+# Net effect: the relay appears in the schematic and the netlist, and on the PCB
+# it is an outline, a keepout and two screw holes.
+#
+# Datasheet numbers used, mm:
+#   flange envelope    68.58 x 34.54   (2.700 MAX x 1.36 MAX)
+#   case body          52.07 wide      (2.05 MAX), same 34.54 depth
+#   mounting centres   59.56 +/- 0.13  (2.345 +/- .005), .090 RAD for a #8 screw
+#   case above flange  26.42           (1.04 MAX)
+#   overall with tabs  37.97           (1.495 MAX)
+# The flange plane is flush with the TOP of the case, so the relay stands on its
+# flange: body and tabs rise 37.97 mm clear of the board.  No cutout and no
+# standoffs are needed, and the tabs are wired from above.
+#
+# The tab pattern is the code-1 hole pattern, so it is derived from the same
+# origin as T92S above (contact column A, pole 1) and then MIRRORED in x: the
+# datasheet plan view is a bottom view, a PCB footprint is a top view.
+T92P_ENV_W, T92P_ENV_H = 68.58, 34.54
+T92P_BODY_W = 52.07
+T92P_MTG_SPAN = 59.56
+T92P_MTG_DRILL = 4.50              # clears a #8 (4.17 mm major) or an M4
+T92P_MARGIN = 0.5                  # so silkscreen strokes are not clipped
+
+T92P_W = T92P_ENV_W + 2 * T92P_MARGIN
+T92P_H = T92P_ENV_H + 2 * T92P_MARGIN
+_pex0 = _pey0 = T92P_MARGIN
+_pecx, _pecy = _pex0 + T92P_ENV_W / 2, _pey0 + T92P_ENV_H / 2
+_pbx0 = _pecx - T92P_BODY_W / 2
+_pbx1 = _pecx + T92P_BODY_W / 2
+
+
+def _t92p_xy(x_ds, y_ds):
+    """Datasheet bottom-view coords (origin = pole 1 column A) -> top view."""
+    x_cv = _pbx0 + (x_ds + 4.12)       # body left edge is x_ds = -4.12
+    y_cv = _pey0 + (y_ds + 9.27)       # body top edge is y_ds = -9.27
+    return 2 * _pecx - x_cv, y_cv      # mirror: bottom view -> top view
+
+
+def _silk_line(x1, y1, x2, y2, sw=0.2032):
+    return (f"<line class='other' x1='{x1:.4f}' y1='{y1:.4f}' x2='{x2:.4f}' "
+            f"y2='{y2:.4f}' stroke='#f0f0f0' stroke-width='{sw}' "
+            f"stroke-linecap='round'/>\n")
+
+
+def _silk_text(x, y, size, txt, anchor="middle"):
+    return (f"<text class='other' font-family=\"'Droid Sans'\" fill='#f0f0f0' "
+            f"font-size='{size}' x='{x:.3f}' y='{y:.3f}' "
+            f"text-anchor='{anchor}'>{txt}</text>\n")
+
+
+# The two mounting holes: NOT connectors, so they never reach the netlist.
+_t92p_mtg = [(_pecx - T92P_MTG_SPAN / 2, _pecy),
+             (_pecx + T92P_MTG_SPAN / 2, _pecy)]
+t92p_copper = "".join(pcb_nonconn(i, x, y, T92P_MTG_DRILL)
+                      for i, (x, y) in enumerate(_t92p_mtg))
+
+# Outer flange envelope.  Drawn as a plain rectangle: the real corners are
+# chamfered, but the datasheet does not dimension the chamfer and the full
+# rectangle is the conservative keepout.
+t92p_silk = silk_rect(_pex0, _pey0, T92P_ENV_W, T92P_ENV_H)
+for _x in (_pbx0, _pbx1):                       # case body edges
+    t92p_silk += _silk_line(_x, _pey0, _x, _pey0 + T92P_ENV_H)
+# Ring the mounting holes so they read as holes, not as dots.
+for _x, _y in _t92p_mtg:
+    t92p_silk += (f"<circle class='other' cx='{_x:.4f}' cy='{_y:.4f}' "
+                  f"r='{T92P_MTG_DRILL / 2 + 0.9:.4f}' fill='none' "
+                  f"stroke='#f0f0f0' stroke-width='0.15'/>\n")
+
+# QC tab outlines.  Informational: these sit 26.4 to 38.0 mm above the board.
+_t92p_contacts = [("2", 0.00, 0.00), ("4", 7.85, 0.00),
+                  ("6", 0.00, 16.00), ("8", 7.85, 16.00)]
+_t92p_coil = [("A1", 41.10, -4.70), ("A2", 41.10, 20.70)]
+for _n, _xd, _yd in _t92p_contacts:
+    _cx, _cy = _t92p_xy(_xd, _yd)
+    t92p_silk += silk_rect(_cx - 0.405, _cy - 3.175, 0.81, 6.35, sw=0.1)
+    t92p_silk += _silk_text(_cx, _cy + 5.0, 1.4, _n)
+for _n, _xd, _yd in _t92p_coil:
+    _cx, _cy = _t92p_xy(_xd, _yd)
+    t92p_silk += silk_rect(_cx - 3.175, _cy - 0.405, 6.35, 0.81, sw=0.1)
+    t92p_silk += _silk_text(_cx, _cy + 2.6, 1.4, _n)
+
+t92p_silk += _silk_text(_pecx, 15.2, 2.2, "T92P7D22-12")
+t92p_silk += _silk_text(_pecx, 18.0, 1.5, "30 A DPST-NO, panel mount")
+t92p_silk += _silk_text(_pecx, 20.6, 1.5, "QC tabs - nothing routes here")
+T92P_PCB = make_pcb_svg(T92P_W, T92P_H, [], t92p_silk, copper_extra=t92p_copper)
+
+# Six real terminals in schematic and breadboard; all hybrid on the PCB.
+t92p_left = [(0, "2", "2  P1 COM  L1 IN"),
+             (2, "6", "6  P2 COM  L2 IN"),
+             (4, "A1", "A1  COIL +12V")]
+t92p_right = [(1, "4", "P1 NO  L1 SW  4"),
+              (3, "8", "P2 NO  L2 OUT  8"),
+              (5, "A2", "COIL DRIVE  A2")]
+_t92p_tie = ""
+for _i in range(2):                              # bar linking each pole's pair
+    _y0 = GRID * (2 * _i + 1.5)
+    _t92p_tie += (f"<line class='other' x1='{PINLEN:.4f}' y1='{_y0:.4f}' "
+                  f"x2='{PINLEN:.4f}' y2='{_y0:.4f}' stroke='#000000' "
+                  f"stroke-width='{LINESW * 3:.4f}' stroke-linecap='round'/>\n")
+T92P_SCHEM, T92P_PINPOS, T92P_SW, T92P_SH = make_schem_svg(
+    "K  T92P7D22-12  DPST-NO 30A  (off-board, QC tabs)", t92p_left, t92p_right)
+T92P_BB = make_bb_svg("T92 panel mount", t92p_left, t92p_right)
+T92P_IC = make_bb_svg("T92P", t92p_left, t92p_right, "icon")
+
+T92P_ID = "T92P7D22_12_kilnmains"
+_t92p_desc = {
+    0: "pole 1 common, line 1 in - .250 in QC tab, wired off-board",
+    1: "pole 1 N.O., line 1 switched - .250 in QC tab, wired off-board",
+    2: "pole 2 common, line 2 in - .250 in QC tab, wired off-board",
+    3: "pole 2 N.O., line 2 out - .250 in QC tab, wired off-board",
+    4: "coil A1, +12 V - .250 in QC tab, take it to a 2-pin SELV block",
+    5: "coil A2, low side to the MOSFET drain - .250 in QC tab",
+}
+t92p_conns = [{"idx": i, "name": n, "desc": _t92p_desc[i], "hybrid": True}
+              for i, n in ((0, "2"), (1, "4"), (2, "6"), (3, "8"),
+                           (4, "A1"), (5, "A2"))]
+T92P_FZP = fzp(
+    T92P_ID, "TE T92P7D22-12 relay, panel mount (hybrid: no PCB connections)", "K",
+    "TE / Potter &amp; Brumfield T92 two-pole 30 A relay, 2 form A, 12 VDC coil, "
+    "panel mount via flanged cover with .250 in (6.35 x 0.81 mm) quick-connect "
+    "tabs. "
+    "HYBRID PART: all six terminals are real in schematic and breadboard, so the "
+    "coil driver and the mains nets connect normally and the sheet documents the "
+    "real circuit - but every one is hybrid in pcbView, so there is no pad, no "
+    "ratsnest and nothing to route on the board. The PCB gets the outline plus "
+    "two mounting holes only, and those are non-plated: no copper, no net. "
+    "Wire the contacts to the load with .250 in QC receptacles and bring the "
+    "coil back to a 2-pin SELV terminal block. "
+    "The flange plane is flush with the top of the case, so the relay stands on "
+    "its flange and the body plus tabs rise 37.97 mm clear of the board - no "
+    "board cutout and no standoffs are needed. "
+    "Envelope 68.58 x 34.54 mm over the flanges, case 52.07 mm wide, mounting "
+    "centres 59.56 +/- 0.13 mm, holes 4.5 mm for a #8 or M4 screw. Silkscreen "
+    "tab marks are informational and mirrored to a top view; the real tabs sit "
+    "26.4 to 38.0 mm above the board. Footprint from TE datasheet 1308242 rev "
+    "1217, mounting and termination code 2.",
+    "kiln mains", t92p_conns,
+    {"package": "panel mount", "part number": "T92P7D22-12",
+     "mn": "TE Connectivity", "voltage": "277VAC", "current": "30A",
+     "coil": "12VDC"})
+
+if __name__ == "__main__":
+    write_part(T92P_ID, T92P_FZP, T92P_BB, T92P_SCHEM, T92P_PCB, T92P_IC)
+    print("wrote T92P panel-mount footprint (hybrid)")
+    print(f"  envelope {T92P_ENV_W:.2f} x {T92P_ENV_H:.2f} mm, "
+          f"svg {T92P_W:.2f} x {T92P_H:.2f} mm")
+    print(f"  {len(t92p_conns)} connectors, all hybrid on the PCB; "
+          f"{len(_t92p_mtg)} non-plated mounting holes")
+    for _i, (_x, _y) in enumerate(_t92p_mtg):
+        print(f"    nonconn{_i} at ({_x:.3f}, {_y:.3f}) "
+              f"dia {T92P_MTG_DRILL} mm, non-plated")

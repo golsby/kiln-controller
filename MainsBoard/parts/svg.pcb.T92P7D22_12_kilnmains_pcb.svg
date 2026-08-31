@@ -1,0 +1,29 @@
+<?xml version='1.0' encoding='UTF-8' standalone='no'?>
+<svg xmlns:svg='http://www.w3.org/2000/svg' xmlns='http://www.w3.org/2000/svg' version='1.2' baseProfile='tiny' x='0in' y='0in' width='2.739370in' height='1.399213in' viewBox='0 0 69.5800 35.5400' >
+<g id='silkscreen'>
+<rect class='other' x='0.5000' y='0.5000' width='68.5800' height='34.5400' stroke='#f0f0f0' stroke-width='0.2032' fill='none' />
+<line class='other' x1='8.7550' y1='0.5000' x2='8.7550' y2='35.0400' stroke='#f0f0f0' stroke-width='0.2032' stroke-linecap='round'/>
+<line class='other' x1='60.8250' y1='0.5000' x2='60.8250' y2='35.0400' stroke='#f0f0f0' stroke-width='0.2032' stroke-linecap='round'/>
+<circle class='other' cx='5.0100' cy='17.7700' r='3.1500' fill='none' stroke='#f0f0f0' stroke-width='0.15'/>
+<circle class='other' cx='64.5700' cy='17.7700' r='3.1500' fill='none' stroke='#f0f0f0' stroke-width='0.15'/>
+<rect class='other' x='56.3000' y='6.5950' width='0.8100' height='6.3500' stroke='#f0f0f0' stroke-width='0.1' fill='none' />
+<text class='other' font-family="'Droid Sans'" fill='#f0f0f0' font-size='1.4' x='56.705' y='14.770' text-anchor='middle'>2</text>
+<rect class='other' x='48.4500' y='6.5950' width='0.8100' height='6.3500' stroke='#f0f0f0' stroke-width='0.1' fill='none' />
+<text class='other' font-family="'Droid Sans'" fill='#f0f0f0' font-size='1.4' x='48.855' y='14.770' text-anchor='middle'>4</text>
+<rect class='other' x='56.3000' y='22.5950' width='0.8100' height='6.3500' stroke='#f0f0f0' stroke-width='0.1' fill='none' />
+<text class='other' font-family="'Droid Sans'" fill='#f0f0f0' font-size='1.4' x='56.705' y='30.770' text-anchor='middle'>6</text>
+<rect class='other' x='48.4500' y='22.5950' width='0.8100' height='6.3500' stroke='#f0f0f0' stroke-width='0.1' fill='none' />
+<text class='other' font-family="'Droid Sans'" fill='#f0f0f0' font-size='1.4' x='48.855' y='30.770' text-anchor='middle'>8</text>
+<rect class='other' x='12.4300' y='4.6650' width='6.3500' height='0.8100' stroke='#f0f0f0' stroke-width='0.1' fill='none' />
+<text class='other' font-family="'Droid Sans'" fill='#f0f0f0' font-size='1.4' x='15.605' y='7.670' text-anchor='middle'>A1</text>
+<rect class='other' x='12.4300' y='30.0650' width='6.3500' height='0.8100' stroke='#f0f0f0' stroke-width='0.1' fill='none' />
+<text class='other' font-family="'Droid Sans'" fill='#f0f0f0' font-size='1.4' x='15.605' y='33.070' text-anchor='middle'>A2</text>
+<text class='other' font-family="'Droid Sans'" fill='#f0f0f0' font-size='2.2' x='34.790' y='15.200' text-anchor='middle'>T92P7D22-12</text>
+<text class='other' font-family="'Droid Sans'" fill='#f0f0f0' font-size='1.5' x='34.790' y='18.000' text-anchor='middle'>30 A DPST-NO, panel mount</text>
+<text class='other' font-family="'Droid Sans'" fill='#f0f0f0' font-size='1.5' x='34.790' y='20.600' text-anchor='middle'>QC tabs - nothing routes here</text>
+</g>
+<g id='copper1'><g id='copper0'>
+<circle id='nonconn0' cx='5.0100' cy='17.7700' r='2.2500' fill='#000000' stroke='none' />
+<circle id='nonconn1' cx='64.5700' cy='17.7700' r='2.2500' fill='#000000' stroke='none' />
+</g></g>
+</svg>
